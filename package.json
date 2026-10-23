@@ -1,0 +1,13 @@
+{
+  "name": "mascota-pareja",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/rules.test.mjs",
+    "build:demo": "node tools/build-demo.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  }
+}
