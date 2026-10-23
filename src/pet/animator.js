@@ -14,6 +14,9 @@
 
 import { DEFAULT_POSE } from './rig.js';
 import { CLIPS } from './clips.js';
+import { ACTIVITY_CLIPS } from './activities.js';
+
+Object.assign(CLIPS, ACTIVITY_CLIPS);
 import { MOODS } from './expressions.js';
 import { clamp, lerp, damp, rand, pick, makeNoise } from './math.js';
 
@@ -59,7 +62,9 @@ export class Animator {
     if (this.action) return this.action.name;
     return 'idle';
   }
-  get isSleeping() { return this.action?.name === 'sleepLoop' || this.action?.name === 'fallAsleep'; }
+  get isSleeping() { return ['sleepLoop', 'fallAsleep', 'goToBed', 'bedLoop', 'stir'].includes(this.action?.name); }
+  get inBed() { return ['goToBed', 'bedLoop', 'stir'].includes(this.action?.name); }
+  get activity() { return this.action?.def.activity ? this.action.name : null; }
   get busy() { return !!this.action && !this.action.def.interruptible; }
 
   // ---------- API ----------
@@ -83,13 +88,21 @@ export class Animator {
 
     if (name === 'evolve') { this._start(name, opts, true); return { ok: true }; }
 
+    // En la cama: duerme de verdad. Tocarlo solo hace que se mueva un poco; despierta cuando
+    // pasa el tiempo de descanso (lo pide la app con 'wakeFromBed').
+    if (this.inBed) {
+      if (name === 'wakeFromBed') { if (cur?.name === 'bedLoop' || cur?.name === 'stir') { this._start('wakeFromBed', opts, true); return { ok: true }; } return { ok: false, reason: 'busy' }; }
+      if (name === 'poke') { if (cur?.name === 'bedLoop') this._start('stir', opts, true); return { ok: false, reason: 'sleeping' }; }
+      if (name === 'pet') { this.sleepPet = 1; return { ok: true, sleeping: true }; }
+      return { ok: false, reason: 'sleeping' };
+    }
     if (this.isSleeping) {
       if (name === 'wake' || name === 'wakeUp') { if (cur?.name === 'sleepLoop') { this._start('wakeUp', opts, true); return { ok: true }; } return { ok: false, reason: 'busy' }; }
       if (name === 'poke') { if (cur?.name === 'sleepLoop') { this._start('wakeGrumpy', opts, true); return { ok: true, woke: true }; } return { ok: false, reason: 'busy' }; }
       if (name === 'pet') { this.sleepPet = 1; return { ok: true, sleeping: true }; }
       return { ok: false, reason: 'sleeping' };
     }
-    if (name === 'wakeUp' || name === 'wake') return { ok: false, reason: 'awake' };
+    if (name === 'wakeUp' || name === 'wake' || name === 'wakeFromBed') return { ok: false, reason: 'awake' };
 
     if (cur && !cur.def.interruptible) {
       // no se corta: se encola (solo la última petición) — salvo acciones sin sentido en cola
@@ -120,7 +133,7 @@ export class Animator {
   _instance(name, opts) {
     const def = CLIPS[name];
     const inst = { name, def, t: 0, opts, d: {}, fired: new Set(), everyT: {}, releasing: null };
-    inst.ctx = { anim: this, rig: this.rig, fx: this.fx, opts, get d() { return inst.d; }, get pose() { return inst.pose; } };
+    inst.ctx = { anim: this, rig: this.rig, fx: this.fx, scene: this.scene, def, opts, get d() { return inst.d; }, get pose() { return inst.pose; } };
     inst.pose = this.pose;
     if (def.init) inst.d = def.init(inst.ctx) || {};
     return inst;
@@ -286,7 +299,16 @@ export class Animator {
     pose.lookX = this.look[0];
     pose.lookY = this.look[1];
 
+    // 7) las cejas acompañan todo: suben al mirar arriba, al estirarse y al sonreír,
+    //    bajan al encogerse y al parpadear, y rebotan con los saltos.
+    const lift = -pose.lookY * 2.4 - pose.squash * 26 + Math.max(0, pose.mouthCurve) * 1.6 + pose.mouthOpen * 2.2 - pose.blink * 1.2 - (pose.y < -1 ? pose.y * 0.12 : 0);
+    const browK = pose.lie > 0.5 ? 0.3 : 1;
+    pose.browL_raise += lift * browK;
+    pose.browR_raise += lift * 0.8 * browK;
+    pose.browL_inner += pose.irisScale > 1.04 ? (pose.irisScale - 1) * 30 : 0;
+
     this.rig.render(pose, this.time, dt);
+    this.scene?.update(dt, this.time, pose);
     this.fx.update(dt);
   }
 }

@@ -14,7 +14,6 @@ const out = `<title>Mushu</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@600;700;800&display=swap">
 <style>${css}</style>
 ${body}
-<script>window.__MASCOTA_DEMO__ = true;</script>
 <script>${js.outputFiles[0].text}</script>
 `;
 writeFileSync('dist/mascota-demo.html', out);

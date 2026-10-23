@@ -8,6 +8,7 @@ import {
   BODY_POINTS, BODY_BOTTOM, BODY_CENTER_X, FACE_ANCHOR, EYES, IRIS_R, LID_REF,
   BROWS, MOUTH, ARMS, LEGS, SHADOW,
 } from './shapes.js';
+import { itemById, WARDROBE_DEFS, capePath } from './wardrobe.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 let uid = 0;
@@ -41,6 +42,8 @@ export const DEFAULT_POSE = {
   armR_a1: ARMS.R.rest.a1, armR_a2: ARMS.R.rest.a2, armR_hand: ARMS.R.rest.hand, armR_curl: ARMS.R.rest.curl, armR_front: 0,
   // piernas
   legL_lift: 0, legR_lift: 0, legL_dx: 0, legR_dx: 0,
+  // acostado en la cama (0..1) y objeto sostenido con las dos manos
+  lie: 0, propTilt: 0, propLift: 0,
 };
 
 export class PetRig {
@@ -110,6 +113,7 @@ export class PetRig {
     G.tip = this._grad(defs, 'radialGradient', 'tip', {}, [[0, 'bodyTop', 0.95], [0.5, 'bodyTop', 0.55], [1, 'bodyTop', 0]]);
     G.glow = this._grad(defs, 'radialGradient', 'glowR', {}, [[0, '#ffffff', 0.95], [0.5, 'bodyTop', 0.5], [1, 'bodyTop', 0]]);
 
+    const wd = el('g', {}, defs); wd.innerHTML = WARDROBE_DEFS.replace(/id="w-/g, `id="${this.id}-w-`);
     const blur = el('filter', { id: `${this.id}-blur`, x: '-40%', y: '-40%', width: '180%', height: '180%' }, defs);
     el('feGaussianBlur', { stdDeviation: 7 }, blur);
 
@@ -131,16 +135,26 @@ export class PetRig {
       this.legs[side] = {
         leg: el('path', { fill: G.leg }, legs),
         foot: el('path', { fill: G.leg }, legs),
+        boot: el('path', { display: 'none' }, legs),
+        sole: el('path', { fill: 'none', 'stroke-width': 3, 'stroke-linecap': 'round', display: 'none' }, legs),
+        laces: el('path', { fill: '#3a3550', display: 'none' }, legs),
       };
     }
 
     // cuerpo (todo lo que se deforma junto)
     const body = el('g', { class: 'body' }, root);
     this.bodyG = body;
+    // capa (detrás de todo el cuerpo)
+    this.backLayer = el('g', { class: 'outfit-back' }, body);
+    this.capeEl = el('path', { 'stroke-width': 2.4, 'stroke-linejoin': 'round' }, this.backLayer);
+    this.capeTrim = el('path', { fill: 'none', 'stroke-width': 9, 'stroke-linecap': 'round' }, this.backLayer);
+    this.capeStars = el('g', {}, this.backLayer);
     this.armsBack = el('g', { class: 'arms-back' }, body);
     this.glowBack = el('path', { fill: '#fff', filter: `url(#${this.id}-blur)`, opacity: 0 }, body);
     this.bodyPath = el('path', { fill: G.body }, body);
 
+    // ropa del cuerpo: recortada con la silueta para que siempre quede ajustada
+    this.clothes = el('g', { class: 'outfit-body', 'clip-path': `url(#${this.id}-bodyclip)` }, body);
     const shading = el('g', { 'clip-path': `url(#${this.id}-bodyclip)` }, body);
     this.shading = shading;
     this.aoRect = el('rect', { x: 0, y: 0, width: 300, height: 300, fill: G.ao }, shading);
@@ -155,6 +169,7 @@ export class PetRig {
     this._bind('edge', this.edge1, 'stroke');
     this._bind('edge', this.edge2, 'stroke');
 
+    this.neckLayer = el('g', { class: 'outfit-neck' }, body);
     // rostro
     const face = el('g', { class: 'face' }, body);
     this.faceG = face;
@@ -211,20 +226,29 @@ export class PetRig {
       face: el('g', { class: 'socket-face' }, face),
     };
 
+    // objeto sostenido con las dos manos (libro, móvil): entre el cuerpo y los brazos delanteros
+    this.propG = el('g', { class: 'prop' }, body);
+    this.prop = null;
     this.armsFront = el('g', { class: 'arms-front' }, body);
     this.arms = {};
     for (const side of ['L', 'R']) {
       const g = el('g', {}, this.armsBack);
       const shade = el('path', { opacity: 0.55 }, g);
       const arm = el('path', {}, g);
+      const sleeve = el('path', { display: 'none' }, g);
+      const cuff = el('path', { display: 'none', fill: 'none', 'stroke-width': 3.2, 'stroke-linecap': 'round' }, g);
       const hand = el('path', {}, g);
+      const held = el('g', { class: 'held' }, g);
       this._bind('armShade', shade, 'fill');
       this._bind('arm', arm, 'fill');
       this._bind('arm', hand, 'fill');
-      this.arms[side] = { g, shade, arm, hand, front: false };
+      this.arms[side] = { g, shade, arm, hand, sleeve, cuff, held, front: false };
     }
 
+    // objetos de actividades (libro, móvil, mando) por delante del cuerpo
+    this.props = el('g', { class: 'props' }, body);
     this.whiteoutEl = el('path', { fill: '#fff', opacity: 0 }, body);
+    this.outfit = {};
 
     // capa de efectos (partículas): fuera del cuerpo
     this.fxLayer = el('g', { class: 'fx' }, svg);
@@ -270,6 +294,52 @@ export class PetRig {
     const lidLine = el('path', { fill: 'none', 'stroke-width': 3.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
     this._bind('lidLine', lidLine, 'stroke');
     return { E, iris, irisBase, hl1, hl2, hl3, shadeA, shadeB, irisShade, lower, lid, lidLine, lowerLine };
+  }
+
+  // ---------- ropa ----------
+  setOutfit(outfit = {}) {
+    this.outfit = { ...outfit };
+    const get = (slot) => (outfit[slot] ? itemById(outfit[slot]) : null);
+    const head = get('head'), face = get('face'), hand = get('hand'), body = get('body'), neck = get('neck'), back = get('back'), feet = get('feet');
+    // los degradados de la ropa usan los de esta mascota (no los de otra vista oculta)
+    const sc = (txt) => (txt || '').replace(/url\(#w-/g, `url(#${this.id}-w-`);
+    this.sockets.head.innerHTML = head ? `<g transform="translate(152 75) rotate(${head.tilt || 0}) scale(1.12)">${sc(head.svg)}</g>` : '';
+    this.sockets.face.innerHTML = face ? sc(face.svg) : '';
+    this.arms.R.held.innerHTML = hand ? sc(hand.svg) : '';
+    this.clothes.innerHTML = body ? sc(body.svg) : '';
+    this.neckLayer.innerHTML = neck ? sc(neck.svg) : '';
+    for (const side of ['L', 'R']) {
+      const a = this.arms[side];
+      a.sleeve.setAttribute('display', (body?.sleeve ? '' : 'none') === 'none' ? 'none' : 'inline');
+      a.cuff.setAttribute('display', (body?.sleeve ? '' : 'none') === 'none' ? 'none' : 'inline');
+      if (body?.sleeve) { a.sleeve.setAttribute('fill', body.sleeve); a.cuff.setAttribute('stroke', body.cuff); }
+      const l = this.legs[side];
+      const sh = feet?.shoe;
+      l.sole.setAttribute('display', (sh ? '' : 'none') === 'none' ? 'none' : 'inline');
+      l.laces.setAttribute('display', (sh?.laces ? '' : 'none') === 'none' ? 'none' : 'inline');
+      l.boot.setAttribute('display', (sh && (sh.boot || sh.fluffy) ? '' : 'none') === 'none' ? 'none' : 'inline');
+      if (sh) {
+        l.foot.setAttribute('fill', sh.base); l.foot.setAttribute('stroke', sh.shade); l.foot.setAttribute('stroke-width', 1.4);
+        l.sole.setAttribute('stroke', sh.sole); l.boot.setAttribute('fill', sh.fluffy ? '#ffffff' : sh.base);
+      } else {
+        l.foot.setAttribute('fill', `url(#${this.id}-leg)`); l.foot.removeAttribute('stroke');
+      }
+    }
+    this.backLayer.setAttribute('display', (back ? '' : 'none') === 'none' ? 'none' : 'inline');
+    if (back) {
+      const c = back.cape;
+      this.capeEl.setAttribute('fill', c.a); this.capeEl.setAttribute('stroke', c.b);
+      this.capeTrim.setAttribute('display', (c.trim ? '' : 'none') === 'none' ? 'none' : 'inline');
+      if (c.trim) { this.capeTrim.setAttribute('stroke', c.trim); this.capeTrim.setAttribute('d', 'M84 182 Q150 198 216 182'); }
+      this.capeStars.innerHTML = c.stars ? '<circle cx="60" cy="236" r="3" fill="#ffd84d"/><circle cx="244" cy="226" r="3.4" fill="#ffd84d"/><circle cx="72" cy="206" r="2" fill="#fff6b0"/><circle cx="236" cy="252" r="2.2" fill="#fff6b0"/>' : '';
+    }
+  }
+
+  // ---------- objeto en las manos ----------
+  setProp(svg, opts = {}) {
+    this.prop = svg ? { at: opts.at || 'both', scale: opts.scale || 1 } : null;
+    this.propG.innerHTML = svg || '';
+    this.propG.style.display = svg ? '' : 'none';
   }
 
   // ---------- forma por etapa ----------
@@ -333,7 +403,12 @@ export class PetRig {
     this.faceG.setAttribute('transform', `translate(${f1(fx + ax)} ${f1(fy + ay)}) scale(${f1(kx * 1000) / 1000} ${f1(ky * 1000) / 1000}) translate(${-ax} ${-ay})`);
     this.hlEl.setAttribute('transform', `translate(${f1(-p.turn * 6 - p.lookX * 1.5)} ${f1(-p.lookY)})`);
     this.rimRect.setAttribute('transform', `translate(${f1(-p.turn * 8)} 0)`);
-    this.sockets.head.setAttribute('transform', `translate(${f1(this._headDx)} ${f1(this._headDy)})`);
+    const hk = `${f1(1000 / (1 - F.slim)) / 1000} ${f1(1000 / (1 + F.tall)) / 1000}`;
+    this.sockets.head.setAttribute('transform', `translate(${f1(this._headDx + 152)} ${f1(this._headDy + 68 - F.flame * 4)}) scale(${hk}) translate(-152 -68)`);
+    if (this.outfit.back) {
+      const c = itemById(this.outfit.back)?.cape;
+      if (c) this.capeEl.setAttribute('d', capePath(time, this.flameLag));
+    }
 
     this._renderEyes(p);
     this._renderBrows(p);
@@ -361,7 +436,21 @@ export class PetRig {
     this.shadow.setAttribute('rx', SHADOW.rx * sc * (1 + p.squash * -0.3));
     this.shadow.setAttribute('ry', SHADOW.ry * sc);
     this.shadow.setAttribute('cx', SHADOW.cx + p.x);
-    this.shadow.setAttribute('opacity', 1 - lift * 0.6);
+    this.shadow.setAttribute('opacity', (1 - lift * 0.6) * (1 - p.lie));
+    // acostado: todo el personaje gira y se apoya sobre la cama, con la cabeza en la almohada
+    if (p.lie > 0.001) {
+      const k = p.lie;
+      const a = -86 * k, tx = 52 * k, ty = -58 * k, sc = 1 - 0.38 * k;
+      this.root.setAttribute('transform', `translate(${f1(tx)} ${f1(ty)}) rotate(${f1(a)} 150 250) translate(150 250) scale(${f1(sc)}) translate(-150 -250)`);
+    } else if (this._lay) this.root.removeAttribute('transform');
+    this._lay = p.lie > 0.001;
+    // objeto sostenido: entre las dos manos (o en la derecha)
+    if (this.prop) {
+      const F = this.form, comp = (P, S) => [S[0] + (P[0] - S[0]) / (1 - F.slim), S[1] + (P[1] - S[1]) / (1 + F.tall)];
+      const hL = comp(this.handL, ARMS.L.shoulder), hR = comp(this.handR, ARMS.R.shoulder);
+      const c = this.prop.at === 'right' ? hR : [(hL[0] + hR[0]) / 2, (hL[1] + hR[1]) / 2];
+      this.propG.setAttribute('transform', `translate(${f1(c[0])} ${f1(c[1] - 12 - p.propLift)}) rotate(${f1(p.propTilt)}) scale(${this.prop.scale})`);
+    }
   }
 
   _bodyPath(p, time) {
@@ -564,6 +653,15 @@ export class PetRig {
       handD += ribbon([B, U1, U2], (u) => lerp(5.6, 4.6, u), 12);
       const palm = L1;
       arm.hand.setAttribute('d', handD);
+      // manga de la chaqueta
+      const body = this.outfit.body && itemById(this.outfit.body);
+      if (body?.sleeve) {
+        const cuffAt = [lerp(Ec[0], W[0], 0.78), lerp(Ec[1], W[1], 0.78)];
+        arm.sleeve.setAttribute('d', ribbon([S, Ec, cuffAt], (u) => lerp(9.6, 8.6, u), 14));
+        const dx = W[0] - Ec[0], dy = W[1] - Ec[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L * 4.6, ny = dx / L * 4.6;
+        arm.cuff.setAttribute('d', `M${f1(cuffAt[0] + nx)} ${f1(cuffAt[1] + ny)}L${f1(cuffAt[0] - nx)} ${f1(cuffAt[1] - ny)}`);
+      }
+      if (side === 'R') arm.held.setAttribute('transform', `translate(${f1(L1[0] + d2[0] * 1.5)} ${f1(L1[1] + d2[1] * 1.5)})`);
 
       const wantFront = p[`arm${side}_front`] > 0.5;
       if (wantFront !== arm.front) {
@@ -601,6 +699,22 @@ export class PetRig {
         return [ankle[0] + X * c - Y * sn, ankle[1] + X * sn + Y * c];
       });
       legs.foot.setAttribute('d', closedSpline(pts, tens));
+      const shoe = this.outfit.feet && itemById(this.outfit.feet)?.shoe;
+      if (shoe) {
+        const T = ([x, y]) => { const X = x * dir * fs; return [ankle[0] + X * c - y * sn, ankle[1] + X * sn + y * c]; };
+        const sp = [[-4.6, 13.4], [6, 14.8], [22, 14.8], [30, 13.6]].map(T);
+        legs.sole.setAttribute('d', 'M' + sp.map((q) => `${f1(q[0])} ${f1(q[1])}`).join('L'));
+        if (shoe.laces) {
+          legs.laces.setAttribute('d', [[9, 5], [14.5, 7.2]].map(T).map(([x, y]) => `M${f1(x + 1.6)} ${f1(y)}A1.6 1.6 0 1 0 ${f1(x - 1.6)} ${f1(y)}A1.6 1.6 0 1 0 ${f1(x + 1.6)} ${f1(y)}Z`).join(''));
+        }
+        if (shoe.boot) {
+          const up = [ankle[0] - (dx / dist) * shoe.boot, ankle[1] - (dy / dist) * shoe.boot];
+          legs.boot.setAttribute('d', ribbon([[ankle[0], ankle[1] + 6], up], () => Lg.wAnkle + 3, 4));
+        } else if (shoe.fluffy) {
+          const fp = T([4, 1]);
+          legs.boot.setAttribute('d', `M${f1(fp[0] + 6)} ${f1(fp[1])}A6 5 0 1 0 ${f1(fp[0] - 6)} ${f1(fp[1])}A6 5 0 1 0 ${f1(fp[0] + 6)} ${f1(fp[1])}Z`);
+        }
+      }
     }
   }
 

@@ -28,15 +28,17 @@ const SYMBOLS = `
 `;
 
 export class FX {
-  constructor(layer, defs) {
+  // Cada mascota en pantalla tiene sus propios símbolos (con prefijo), para que funcionen
+  // aunque otra vista con los mismos dibujos esté oculta.
+  constructor(layer, defs, prefix = 'p') {
     this.layer = layer;
     this.parts = [];
     this.sprites = new Set();
-    if (!document.getElementById('fx-heart')) {
-      const d = document.createElementNS(NS, 'defs');
-      d.innerHTML = SYMBOLS + FOOD_DEFS + FOODS.map((f) => `<symbol id="food-${f.id}" viewBox="-18 -20 36 36" overflow="visible">${f.svg}</symbol>`).join('');
-      (defs || layer.ownerSVGElement).appendChild(d);
-    }
+    this.p = prefix + '-';
+    const scope = (txt) => txt.replace(/id="(fx|fd|food)-/g, `id="${this.p}$1-`).replace(/url\(#fd-/g, `url(#${this.p}fd-`);
+    const d = document.createElementNS(NS, 'defs');
+    d.innerHTML = scope(SYMBOLS + FOOD_DEFS + FOODS.map((f) => `<symbol id="food-${f.id}" viewBox="-18 -20 36 36" overflow="visible">${f.svg}</symbol>`).join(''));
+    (defs || layer.ownerSVGElement).appendChild(d);
     this.confettiColors = ['#ff5fa2', '#ffd84d', '#5fd4ff', '#8f6bff', '#5ff0b0', '#ff8a4d'];
   }
 
@@ -48,7 +50,7 @@ export class FX {
   }
 
   _use(id, size, extra = {}) {
-    return this._el('use', { href: `#${id}`, width: size, height: size, x: -size / 2, y: -size / 2, ...extra });
+    return this._el('use', { href: `#${this.p}${id}`, width: size, height: size, x: -size / 2, y: -size / 2, ...extra });
   }
 
   // Partícula genérica

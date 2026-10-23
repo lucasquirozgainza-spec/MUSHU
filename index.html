@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ffa8fd">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="Mushu">
 <title>Mushu</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,38 +17,17 @@
 <body>
 <div class="sky" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
-<!-- Arranque -->
 <section class="screen center" id="scr-loading">
   <p class="loading">Cargando…</p>
 </section>
 
-<!-- 1. Conexión -->
-<section class="screen narrow" id="scr-connect" hidden>
-  <h1 class="big">¿Dónde vivirá vuestra mascota?</h1>
-  <p class="lead">Para cuidarla entre los dos desde vuestros teléfonos, la app guarda su estado en Supabase (gratis). Las instrucciones están en el README.</p>
-  <form class="card form" id="f-connect">
-    <h2>Compartida con mi pareja</h2>
-    <label for="in-url">Project URL</label>
-    <input id="in-url" type="url" placeholder="https://xxxx.supabase.co" required autocomplete="off">
-    <label for="in-key">Clave anon public</label>
-    <input id="in-key" type="text" placeholder="eyJhbGciOi…" required autocomplete="off">
-    <p class="err" id="connect-err" role="alert"></p>
-    <button class="btn primary" type="submit">Conectar</button>
-  </form>
-  <div class="card form">
-    <h2>Solo en este dispositivo</h2>
-    <p class="small">Modo de prueba: nada se comparte con la otra persona. Útil para verla funcionar antes de configurar Supabase.</p>
-    <button class="btn" type="button" id="btn-local">Probar en modo local</button>
-  </div>
-</section>
-
-<!-- 2. Bienvenida -->
+<!-- Bienvenida -->
 <section class="screen narrow" id="scr-welcome" hidden>
   <div class="pet-wrap small" id="pet-welcome"></div>
   <h1 class="big center-text">¿Cómo se llamará nuestra mascota?</h1>
   <div class="tabs" id="welcome-tabs" role="tablist">
     <button type="button" role="tab" aria-selected="true" data-tab="create">Crear la mascota</button>
-    <button type="button" role="tab" aria-selected="false" data-tab="join">Tengo un código</button>
+    <button type="button" role="tab" aria-selected="false" data-tab="join">Mi pareja ya la creó</button>
   </div>
   <form class="card form" id="f-create">
     <label for="in-name">Nombre de la mascota</label>
@@ -52,26 +35,32 @@
     <label for="in-birth">¿Cuándo nació?</label>
     <input id="in-birth" type="date" required value="2025-09-25">
     <p class="small" id="birth-hint"></p>
+    <label for="in-streak">Racha actual (días)</label>
+    <input id="in-streak" type="number" min="0" max="100000" required value="393">
     <label for="in-me">Tu nombre</label>
     <input id="in-me" maxlength="24" required placeholder="Cómo te verá tu pareja" autocomplete="off">
-    <div id="partner-field">
-      <label for="in-partner">Nombre de tu pareja</label>
-      <input id="in-partner" maxlength="24" placeholder="Solo en modo local" autocomplete="off">
-    </div>
+    <label for="in-partner">Nombre de tu pareja</label>
+    <input id="in-partner" maxlength="24" required autocomplete="off">
     <p class="err" id="create-err" role="alert"></p>
     <button class="btn primary" type="submit">Confirmar</button>
   </form>
   <form class="card form" id="f-join" hidden>
-    <label for="in-code">Código de invitación</label>
-    <input id="in-code" maxlength="6" required placeholder="Ej. K7PZQA" autocomplete="off" class="code-input">
-    <label for="in-me2">Tu nombre</label>
-    <input id="in-me2" maxlength="24" required autocomplete="off">
+    <p class="small">Pide a tu pareja el código que aparece en <b>Ajustes → Compartir con tu pareja</b> y pégalo aquí.</p>
+    <label for="in-code">Código de tu pareja</label>
+    <input id="in-code" required placeholder="MUSHU-…" autocomplete="off" spellcheck="false">
     <p class="err" id="join-err" role="alert"></p>
-    <button class="btn primary" type="submit">Unirme</button>
+    <button class="btn primary" type="submit">Conectar</button>
   </form>
 </section>
 
-<!-- 3. Juego -->
+<!-- ¿Quién eres? -->
+<section class="screen narrow" id="scr-who" hidden>
+  <h1 class="big center-text" id="who-title">¿Quién eres?</h1>
+  <p class="lead center-text">Así sabremos quién lo cuida en cada momento.</p>
+  <div class="who-list" id="who-list"></div>
+</section>
+
+<!-- Juego -->
 <main class="game" id="scr-main" hidden>
   <header class="hud">
     <div class="hud-row">
@@ -81,7 +70,7 @@
       </div>
       <div class="chips">
         <span class="lives" id="lives" aria-label="Vidas"></span>
-        <span class="chip streak" id="streak" title="Días seguidos que lo cuidasteis los dos"></span>
+        <span class="chip streak" id="streak"></span>
       </div>
     </div>
     <div class="hud-row sub">
@@ -100,7 +89,7 @@
         <p id="moved-text"></p>
         <button class="btn" type="button" id="btn-restart">Volver a empezar</button>
         <div class="confirm" id="restart-confirm" hidden>
-          <p>Empezará otra vez como bebé, con edad 0. ¿Seguro?</p>
+          <p>Volverá como bebé, con edad 0 y racha 0. ¿Seguro?</p>
           <div class="row"><button class="btn danger" type="button" id="btn-restart-yes">Sí, empezar de nuevo</button><button class="btn" type="button" id="btn-restart-no">Cancelar</button></div>
         </div>
       </div>
@@ -110,7 +99,22 @@
     <div class="stats" id="stats"></div>
     <div class="tray" id="tray" hidden></div>
     <div class="dock" id="dock"></div>
-    <p class="hint">Tócalo para que reaccione · desliza el dedo encima para acariciarlo</p>
+    <p class="hint" id="hint">Tócalo para que reaccione · desliza el dedo encima para acariciarlo · patea el balón</p>
+  </div>
+
+  <div class="view" id="view-closet" hidden>
+    <div class="closet-stage">
+      <div class="pet-wrap closet-pet" id="pet-closet"></div>
+      <p class="small center-text" id="closet-hint">Toca una prenda para probártela.</p>
+    </div>
+    <div class="slots" id="slots" role="tablist" aria-label="Tipo de prenda"></div>
+    <div class="items" id="items"></div>
+    <h2 class="sec">Disfraces</h2>
+    <div class="costumes" id="costumes"></div>
+    <div class="row closet-actions">
+      <button class="btn" type="button" id="btn-undress">Quitar todo</button>
+      <button class="btn primary" type="button" id="btn-wear">Ponérselo</button>
+    </div>
   </div>
 
   <div class="view" id="view-history" hidden>
@@ -122,28 +126,46 @@
   </div>
 
   <div class="view" id="view-settings" hidden>
+    <form class="card form" id="f-share">
+      <h2>Compartir con tu pareja</h2>
+      <div id="share-off">
+        <p class="small">Para que los dos cuidéis a la misma mascota desde vuestros teléfonos, los datos se guardan en vuestro repositorio de GitHub. Solo lo configura uno; el otro usa un código. Los pasos están en el README.</p>
+        <label for="sh-owner">Usuario de GitHub</label>
+        <input id="sh-owner" autocomplete="off" spellcheck="false" placeholder="tu-usuario">
+        <label for="sh-repo">Repositorio</label>
+        <input id="sh-repo" autocomplete="off" spellcheck="false" placeholder="mushu">
+        <label for="sh-token">Token de GitHub</label>
+        <input id="sh-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+        <p class="err" id="share-err" role="alert"></p>
+        <button class="btn primary" type="submit" id="btn-share">Conectar</button>
+      </div>
+      <div id="share-on" hidden>
+        <p class="small" id="share-info"></p>
+        <label for="link-code">Código para tu pareja</label>
+        <div class="row"><input id="link-code" readonly><button class="btn" type="button" id="btn-copy">Copiar</button></div>
+        <p class="small">Tu pareja abre la web, elige «Mi pareja ya la creó» y pega este código. Contiene el acceso al repositorio: compártelo solo con ella.</p>
+        <div class="row"><button class="btn" type="button" id="btn-who">Cambiar quién soy</button><button class="btn" type="button" id="btn-unshare">Desconectar este teléfono</button></div>
+      </div>
+    </form>
     <form class="card form" id="f-petname">
       <h2>Mascota</h2>
       <label for="set-name">Nombre</label>
       <div class="row"><input id="set-name" maxlength="24" required><button class="btn" type="submit">Guardar</button></div>
     </form>
-    <form class="card form" id="f-myname">
+    <form class="card form" id="f-names">
       <h2>Cuidadores</h2>
       <div id="names-fields"></div>
       <button class="btn" type="submit">Guardar nombres</button>
     </form>
-    <div class="card form" id="invite-card" hidden>
-      <h2>Invitar a tu pareja</h2>
-      <p class="small">Tu pareja abre el mismo enlace, elige «Tengo un código» y escribe:</p>
-      <div class="row"><output class="code" id="invite-code"></output><button class="btn" type="button" id="btn-copy">Copiar</button></div>
-    </div>
     <form class="card form" id="f-time">
-      <h2>Tiempo y evolución</h2>
-      <p class="small">Estos datos deciden su edad y cuándo evoluciona. Están protegidos para no cambiarlos sin querer.</p>
+      <h2>Tiempo, racha y evolución</h2>
+      <p class="small">Estos datos deciden su edad, su racha y cuándo evoluciona. Están protegidos para no cambiarlos sin querer.</p>
       <button class="btn" type="button" id="btn-unlock">Editar</button>
       <fieldset id="time-fields" disabled hidden>
         <label for="set-birth">Fecha de nacimiento</label>
         <input id="set-birth" type="date" required>
+        <label for="set-streak">Racha (días)</label>
+        <input id="set-streak" type="number" min="0" max="100000" required>
         <label for="set-d2">Segunda etapa (día)</label>
         <input id="set-d2" type="number" min="1" max="5000" required>
         <label for="set-d3">Tercera etapa (día)</label>
@@ -154,18 +176,14 @@
     </form>
     <div class="card form">
       <h2>Copia de seguridad</h2>
-      <p class="small">Descarga un archivo con todos sus datos e historial.</p>
-      <div class="row"><button class="btn" type="button" id="btn-export">Descargar copia</button><label class="btn" id="import-label" hidden>Restaurar copia<input type="file" id="in-import" accept="application/json" hidden></label></div>
-    </div>
-    <div class="card form">
-      <h2>Conexión</h2>
-      <p class="small" id="conn-info"></p>
-      <button class="btn" type="button" id="btn-switch">Cambiar de modo</button>
+      <p class="small">Descarga un archivo con todos sus datos e historial, o restaura uno.</p>
+      <div class="row"><button class="btn" type="button" id="btn-export">Descargar copia</button><label class="btn" for="in-import">Restaurar copia</label><input type="file" id="in-import" accept="application/json" hidden></div>
     </div>
   </div>
 
   <nav class="tabbar" aria-label="Secciones">
     <button type="button" data-view="home" aria-current="page"><svg viewBox="0 0 24 24"><path d="M12 3c2 3 6 5 6 10a6 6 0 0 1-12 0c0-3 2-4 2-7 1 1 2 2 2 3 1-2 2-4 2-6Z"/></svg><span id="tab-name">Mushu</span></button>
+    <button type="button" data-view="closet"><svg viewBox="0 0 24 24"><path d="M9 3a3 3 0 0 0 6 0l5 2 2 5-3 1.5V21H5v-9.5L2 10l2-5Z" stroke-linejoin="round"/></svg><span>Armario</span></button>
     <button type="button" data-view="history"><svg viewBox="0 0 24 24"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-3-6.7M21 4v5h-5" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Historial</span></button>
     <button type="button" data-view="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke-width="2.2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.4" fill="none" stroke-width="2.2"/><circle cx="10" cy="17" r="2.4" fill="none" stroke-width="2.2"/></svg><span>Ajustes</span></button>
   </nav>

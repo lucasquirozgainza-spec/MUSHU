@@ -5,12 +5,14 @@ import { PetRig } from './rig.js';
 import { FX } from './fx.js';
 import { Animator } from './animator.js';
 import { STAGES, stageById } from './stages.js';
-import { rand } from './math.js';
+import { rand, pick } from './math.js';
+import { Scene } from './scene.js';
+import { ACTIVITY_NAMES } from './activities.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
 export class PetView {
-  constructor(container, { stage = 1, interactive = true, viewBox = '-30 -78 350 373' } = {}) {
+  constructor(container, { stage = 1, interactive = true, viewBox = '-30 -78 350 373', scene = true, activities = false } = {}) {
     this.container = container;
     this.svg = document.createElementNS(NS, 'svg');
     this.svg.setAttribute('viewBox', viewBox);
@@ -21,8 +23,13 @@ export class PetView {
     this.stage = stageById(stage);
     this.rig = new PetRig(this.svg, this.stage.palette);
     this.rig.setForm(this.stage.form);
-    this.fx = new FX(this.rig.fxLayer, this.rig.defs);
+    this.fx = new FX(this.rig.fxLayer, this.rig.defs, this.rig.id);
     this.anim = new Animator(this.rig, this.fx);
+    if (scene) { this.scene = new Scene(this.svg, this.rig); this.anim.scene = this.scene; }
+    // actividades propias: a veces lo pillas jugando, leyendo, con el móvil o con el autito
+    this.activities = activities;
+    this.nextActivity = activities ? rand(25, 50) : Infinity;
+    this.calm = 0; // segundos sin acciones
     this.ambientT = 0;
     this._last = performance.now();
     this._raf = null;
@@ -45,6 +52,7 @@ export class PetView {
     this._last = now;
     this.anim.update(dt);
     this._ambient(dt);
+    this._activityTick(dt);
   }
 
   _ambient(dt) {
@@ -59,6 +67,34 @@ export class PetView {
       else this.fx.ember(x, y, Math.random() < 0.5 ? '#fff2a0' : '#ffb347');
     }
   }
+
+  _activityTick(dt) {
+    if (!this.activities) return;
+    if (this.anim.action || this.paused) { this.calm = 0; return; }
+    this.calm += dt;
+    if (this.calm > this.nextActivity) { this.startActivity(); }
+  }
+
+  // Empieza una actividad (o una al azar). Devuelve el nombre o null.
+  startActivity(name) {
+    const mood = this.anim.mood;
+    if (mood === 'sad' || mood === 'sleepy') { this.nextActivity = this.calm + rand(30, 60); return null; }
+    const choice = name || pick(ACTIVITY_NAMES.filter((n) => n !== this._lastActivity));
+    const r = this.anim.request(choice);
+    this.nextActivity = rand(45, 110);
+    this.calm = 0;
+    if (r.ok) { this._lastActivity = choice; this.onActivity?.(choice); return choice; }
+    return null;
+  }
+
+  // Dormir en la cama. `already` = ya estaba durmiendo al abrir la app (sin animación de acostarse).
+  sleepInBed(already = false) {
+    if (already) { this.anim._start('bedLoop', {}, true); return { ok: true }; }
+    return this.anim.request('goToBed');
+  }
+  wakeFromBed() { return this.anim.request('wakeFromBed'); }
+
+  setOutfit(outfit) { this.rig.setOutfit(outfit || {}); }
 
   setStage(id) {
     this.stage = stageById(id);
@@ -120,6 +156,16 @@ export class PetView {
     });
     svg.addEventListener('pointerdown', (e) => {
       const p = this._toSvg(e);
+      if (this.scene && this.scene.hitBall(p.x, p.y) && !this.anim.inBed) {
+        const b = this.scene.ball;
+        if (!b.held) {
+          this.scene.kick(p.x < b.x ? 1 : -1, 1);
+          this.anim.setPointer(b.x, b.y - 60);
+          if (!this.anim.action) this.anim.request('browRaise');
+          this.onInteract?.('ball', { ok: true });
+        }
+        return;
+      }
       const local = this._hit(p);
       down = { x: p.x, y: p.y, lx: p.x, ly: p.y, t: performance.now(), dist: 0, onBody: !!local, local, petting: false };
       if (local) svg.setPointerCapture?.(e.pointerId);
