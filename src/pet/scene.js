@@ -76,10 +76,10 @@ export class Scene {
 
     // balón
     this.ballG = el('g', { class: 'ball', style: 'cursor:pointer' }, this.front);
-    this.ballShadow = el('ellipse', { rx: 12, ry: 3.4, fill: '#000', opacity: 0.14 }, this.ballG);
+    this.ballShadow = el('ellipse', { rx: 20, ry: 4.6, fill: '#000', opacity: 0.14 }, this.ballG);
     this.ballSpin = el('g', {}, this.ballG);
     this.ballSpin.innerHTML = BALL;
-    this.ball = { x: 268, y: 275, vx: 0, vy: 0, rot: 0, r: 13, ground: 275, visible: true, held: false };
+    this.ball = { x: 262, y: 275, vx: 0, vy: 0, rot: 0, r: 22, ground: 275, visible: true, held: false };
 
     // juguete en el suelo (autito)
     this.toy = el('g', { display: 'none' }, this.front);
@@ -109,8 +109,8 @@ export class Scene {
     const b = this.ball;
     const h = clamp((b.ground - b.y) / 120, 0, 1);
     this.ballShadow.setAttribute('cx', f1(b.x)); this.ballShadow.setAttribute('cy', f1(b.ground + 1));
-    this.ballShadow.setAttribute('rx', f1(12 * (1 - h * 0.5))); this.ballShadow.setAttribute('opacity', f1(0.14 * (1 - h * 0.6)));
-    this.ballSpin.setAttribute('transform', `translate(${f1(b.x)} ${f1(b.y - b.r)}) rotate(${f1(b.rot)})`);
+    this.ballShadow.setAttribute('rx', f1(b.r * 0.92 * (1 - h * 0.5))); this.ballShadow.setAttribute('opacity', f1(0.14 * (1 - h * 0.6)));
+    this.ballSpin.setAttribute('transform', `translate(${f1(b.x)} ${f1(b.y - b.r)}) rotate(${f1(b.rot)}) scale(${f1(b.r / 13)})`);
   }
 
   update(dt, time, pose) {

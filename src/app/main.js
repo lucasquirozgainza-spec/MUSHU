@@ -4,9 +4,8 @@ import { PetView } from '../pet/index.js';
 import { STAGES, stageById } from '../pet/stages.js';
 import { FOODS, foodIcon } from '../pet/food.js';
 import { SLOTS, ITEMS, COSTUMES, itemById, itemThumb, isUnlocked } from '../pet/wardrobe.js';
-import { ACTIVITY_LABELS } from '../pet/activities.js';
 import { derive, canDo, ACTIONS, MILESTONES, localDay, addDays, dayDiff, SLEEP_MIN } from './rules.js';
-import { Store, encodeLink, decodeLink, guessRepo } from './store.js';
+import { Store, decodeLink, guessRepo, inviteUrl, blobFromUrl } from './store.js';
 import { MiniGame } from './minigame.js';
 import { boxSVG } from './box.js';
 
@@ -58,6 +57,23 @@ const LS = { get: (k) => { try { return localStorage.getItem(k); } catch { retur
 async function boot() {
   try { pet = await store.init(); } catch (e) { pet = store.pet; }
   store.subscribe(onStore);
+  // ¿Se abrió el enlace de invitación de la pareja?
+  const invite = blobFromUrl(location.hash);
+  if (invite) {
+    history.replaceState(null, '', location.pathname + location.search);
+    const cur = store.syncConfig;
+    if (!cur || cur.id !== invite.id) {
+      try {
+        const remote = await store.peekRemote(invite);
+        if (!remote) throw new Error('Ese enlace ya no existe. Pide a tu pareja que te envíe uno nuevo.');
+        await store.connect(invite, { prefer: 'remote' });
+        pet = store.pet;
+        return showWho();
+      } catch (err) {
+        if (!pet) { showWelcome(); joinTab(); $('#join-err').textContent = err.message; return; }
+      }
+    }
+  }
   if (!pet) return showWelcome();
   if (store.needsIdentity()) return showWho();
   enterMain();
@@ -77,6 +93,7 @@ function updateBirthHint() {
   $('#birth-hint').textContent = days < 0 ? 'La fecha no puede ser futura.' : `Hoy tiene ${days} días. Crece a los 600 y a los 900 días.`;
 }
 $('#in-birth').addEventListener('input', updateBirthHint);
+function joinTab() { document.querySelector('#welcome-tabs [data-tab="join"]').click(); }
 $('#welcome-tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   document.querySelectorAll('#welcome-tabs button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
@@ -117,6 +134,7 @@ function showWho() {
 $('#who-list').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   store.setMe(b.dataset.id);
+  store.markJoined();
   if (mainStarted) { show('scr-main'); render(); } else enterMain();
 });
 
@@ -139,10 +157,11 @@ function enterMain(firstTime = false) {
   render();
   setInterval(render, 20000);
   setInterval(updateCooldowns, 5000);
-  if (firstTime) { banner(`¡Hola, ${pet.name}!`, `Tiene ${d.age} días. Cuidadlo cada día entre los dos.`); return; }
-  // A veces lo pillas haciendo algo
+  if (firstTime) { banner(`¡Hola, ${pet.name}!`, `Tiene ${d.age} días. Ahora envía el enlace a tu pareja.`); return; }
+  // A veces lo pillas haciendo algo: al verte llegar se sorprende
   if (!d.movedOut && !d.sleepUntil && d.mood !== 'sad' && Math.random() < 0.6) {
-    setTimeout(() => { const a = pv.startActivity(); if (a) toast(`Lo pillaste ${ACTIVITY_LABELS[a]}`); }, 500);
+    pv.startActivity();
+    setTimeout(() => pv.noticeYou(), 2600 + Math.random() * 1400);
   }
 }
 
@@ -194,6 +213,7 @@ function render() {
   $('#streak').title = `Racha: ${d.streak} días cuidándolo. Días juntos: ${pet.state.togetherDays}.`;
   renderStatus();
   renderCarer();
+  renderInvite();
 
   // mudanza
   $('#moved').hidden = !d.movedOut;
@@ -247,6 +267,29 @@ function renderStatus() {
     : st === 'syncing' ? 'Guardando…'
     : `Sin conexión${pend ? ` · ${pend} pendiente${pend > 1 ? 's' : ''}` : ''}`;
 }
+
+// Tarjeta para invitar a la pareja mientras todavía no ha entrado
+function renderInvite() {
+  const cfg = store.syncConfig;
+  const partner = pet.members.find((m) => m.id !== store.meId);
+  const show = !!cfg && cfg.kind === 'blob' && partner && !partner.joinedAt && !LS.get('mascota.inviteHidden');
+  $('#invite').hidden = !show;
+  if (show) $('#invite-title').textContent = `Invita a ${partner.name}`;
+}
+async function sendInvite() {
+  const cfg = store.syncConfig;
+  if (!cfg || cfg.kind !== 'blob') { toast('Todavía conectando… inténtalo en unos segundos.'); return; }
+  const url = inviteUrl(cfg);
+  const text = `Te invito a cuidar a ${pet.name} conmigo: ${url}`;
+  if (navigator.share) { try { await navigator.share({ title: pet.name, text, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  copyText(url, 'Enlace copiado. Pégalo en vuestro chat.');
+}
+async function copyText(text, msg) {
+  try { await navigator.clipboard.writeText(text); toast(msg); }
+  catch { $('#invite-link').value = text; $('#invite-link').select(); toast('Selecciona y copia el enlace'); }
+}
+$('#btn-invite-send').addEventListener('click', sendInvite);
+$('#btn-invite-copy').addEventListener('click', () => { const c = store.syncConfig; if (c?.kind === 'blob') copyText(inviteUrl(c), 'Enlace copiado'); });
 
 function renderCarer() {
   const c = $('#carer');
@@ -493,19 +536,22 @@ function renderHistory() {
 
 // ---------------------------------------------------------------- ajustes
 function renderSettings() {
-  const synced = store.synced;
-  $('#share-off').hidden = synced;
-  $('#share-on').hidden = !synced;
-  if (synced) {
-    const c = store.syncConfig;
-    const me = pet.members.find((m) => m.id === store.meId);
-    $('#share-info').textContent = `Conectado a ${c.owner}/${c.repo}. Eres ${me?.name || '?'}.`;
-    $('#link-code').value = encodeLink(c);
+  const cfg = store.syncConfig;
+  const me = pet.members.find((m) => m.id === store.meId);
+  const partner = pet.members.find((m) => m.id !== store.meId);
+  $('#share-link-box').hidden = !cfg;
+  $('#btn-retry').hidden = !!cfg;
+  if (!cfg) $('#share-state').textContent = 'Todavía no se pudo conectar (¿hay Internet?). Mientras tanto, Mushu vive en este teléfono.';
+  else if (cfg.kind === 'blob') {
+    $('#share-state').textContent = `Conexión automática activa. Eres ${me?.name || '?'}. ${partner?.joinedAt ? `${partner.name} ya está conectada/o.` : `${partner?.name || 'Tu pareja'} todavía no ha abierto el enlace.`}`;
+    $('#invite-link').value = inviteUrl(cfg);
   } else {
-    const g = guessRepo();
-    if (!$('#sh-owner').value) $('#sh-owner').value = g.owner;
-    if (!$('#sh-repo').value) $('#sh-repo').value = g.repo;
+    $('#share-state').textContent = `Conectado a GitHub (${cfg.owner}/${cfg.repo}). Eres ${me?.name || '?'}.`;
+    $('#share-link-box').hidden = true;
   }
+  const g = guessRepo();
+  if (!$('#sh-owner').value) $('#sh-owner').value = g.owner;
+  if (g.repo && !/\.github\.io$/.test(g.repo)) $('#sh-repo').value = g.repo;
   $('#set-name').value = pet.name;
   $('#names-fields').innerHTML = pet.members.map((m, i) => `<label for="set-m${i}">Cuidador ${i + 1}${m.id === store.meId ? ' (tú)' : ''}</label><input id="set-m${i}" data-id="${esc(m.id)}" maxlength="24" required value="${esc(m.name)}">`).join('');
   $('#set-birth').value = pet.birthDate;
@@ -516,8 +562,7 @@ function renderSettings() {
 }
 $('#f-share').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (store.synced) return;
-  const cfg = { owner: $('#sh-owner').value.trim(), repo: $('#sh-repo').value.trim(), token: $('#sh-token').value.trim() };
+  const cfg = { kind: 'github', owner: $('#sh-owner').value.trim(), repo: $('#sh-repo').value.trim(), token: $('#sh-token').value.trim() };
   $('#share-err').textContent = '';
   if (!cfg.owner || !cfg.repo || !cfg.token) { $('#share-err').textContent = 'Rellena el usuario, el repositorio y el token.'; return; }
   const btn = $('#btn-share'); btn.disabled = true; btn.textContent = 'Conectando…';
@@ -530,16 +575,14 @@ $('#f-share').addEventListener('submit', async (e) => {
     if (res === 'adopted' && store.needsIdentity()) { showWho(); return; }
     pv.setOutfit(pet.state.outfit);
     render(); renderSettings();
-    toast(res === 'adopted' ? 'Conectado: se cargó la mascota guardada en GitHub.' : '¡Conectado! Ahora pásale el código a tu pareja.');
+    toast(res === 'adopted' ? 'Conectado: se cargó la mascota guardada en GitHub.' : 'Conectado con GitHub.');
   } catch (err) { $('#share-err').textContent = err.message; }
-  btn.disabled = false; btn.textContent = 'Conectar';
+  btn.disabled = false; btn.textContent = 'Conectar con GitHub';
 });
-$('#btn-copy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText($('#link-code').value); toast('Código copiado'); }
-  catch { $('#link-code').select(); toast('Selecciona y copia el código'); }
-});
+$('#btn-copy').addEventListener('click', () => copyText($('#invite-link').value, 'Enlace copiado'));
+$('#btn-send').addEventListener('click', sendInvite);
 $('#btn-who').addEventListener('click', () => showWho());
-$('#btn-unshare').addEventListener('click', () => { store.disconnect(); renderSettings(); render(); toast('Este teléfono ya no comparte. Los datos siguen aquí.'); });
+$('#btn-retry').addEventListener('click', async () => { const ok = await store.autoShare(); renderSettings(); render(); toast(ok ? 'Conectado' : 'Sigue sin conexión. Prueba en un rato o usa la opción de GitHub.'); });
 $('#f-petname').addEventListener('submit', async (e) => {
   e.preventDefault();
   const r = await store.updatePet({ name: $('#set-name').value.trim() }); pet = r.pet; render(); toast('Nombre guardado');
@@ -571,6 +614,6 @@ $('#in-import').addEventListener('change', async (e) => {
   catch (err) { toast(err.message); }
 });
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); if (pv && currentView === 'home') setTimeout(() => pv.noticeYou(), 900); } });
 
 boot();

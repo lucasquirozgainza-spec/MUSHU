@@ -45,9 +45,9 @@
     <button class="btn primary" type="submit">Confirmar</button>
   </form>
   <form class="card form" id="f-join" hidden>
-    <p class="small">Pide a tu pareja el código que aparece en <b>Ajustes → Compartir con tu pareja</b> y pégalo aquí.</p>
-    <label for="in-code">Código de tu pareja</label>
-    <input id="in-code" required placeholder="MUSHU-…" autocomplete="off" spellcheck="false">
+    <p class="small">Lo más fácil: abre directamente el enlace que te envió tu pareja. Si no funciona, pégalo aquí.</p>
+    <label for="in-code">Enlace de tu pareja</label>
+    <input id="in-code" required placeholder="https://…#mushu=…" autocomplete="off" spellcheck="false">
     <p class="err" id="join-err" role="alert"></p>
     <button class="btn primary" type="submit">Conectar</button>
   </form>
@@ -95,6 +95,10 @@
       </div>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </div>
+    <div class="invite card" id="invite" hidden>
+      <p><b id="invite-title">Invita a tu pareja</b><br><span class="small">Envíale este enlace: al abrirlo verá a la misma mascota.</span></p>
+      <div class="row"><button class="btn primary" type="button" id="btn-invite-send">Enviar enlace</button><button class="btn" type="button" id="btn-invite-copy">Copiar</button></div>
+    </div>
     <p class="evo" id="evo"></p>
     <div class="stats" id="stats"></div>
     <div class="tray" id="tray" hidden></div>
@@ -126,27 +130,30 @@
   </div>
 
   <div class="view" id="view-settings" hidden>
-    <form class="card form" id="f-share">
+    <div class="card form" id="share-card">
       <h2>Compartir con tu pareja</h2>
-      <div id="share-off">
-        <p class="small">Para que los dos cuidéis a la misma mascota desde vuestros teléfonos, los datos se guardan en vuestro repositorio de GitHub. Solo lo configura uno; el otro usa un código. Los pasos están en el README.</p>
-        <label for="sh-owner">Usuario de GitHub</label>
-        <input id="sh-owner" autocomplete="off" spellcheck="false" placeholder="tu-usuario">
-        <label for="sh-repo">Repositorio</label>
-        <input id="sh-repo" autocomplete="off" spellcheck="false" placeholder="mushu">
-        <label for="sh-token">Token de GitHub</label>
-        <input id="sh-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
-        <p class="err" id="share-err" role="alert"></p>
-        <button class="btn primary" type="submit" id="btn-share">Conectar</button>
+      <p class="small" id="share-state"></p>
+      <div id="share-link-box" hidden>
+        <label for="invite-link">Enlace para tu pareja</label>
+        <div class="row"><input id="invite-link" readonly><button class="btn" type="button" id="btn-copy">Copiar</button></div>
+        <div class="row"><button class="btn primary" type="button" id="btn-send">Enviar enlace</button><button class="btn" type="button" id="btn-who">Cambiar quién soy</button></div>
       </div>
-      <div id="share-on" hidden>
-        <p class="small" id="share-info"></p>
-        <label for="link-code">Código para tu pareja</label>
-        <div class="row"><input id="link-code" readonly><button class="btn" type="button" id="btn-copy">Copiar</button></div>
-        <p class="small">Tu pareja abre la web, elige «Mi pareja ya la creó» y pega este código. Contiene el acceso al repositorio: compártelo solo con ella.</p>
-        <div class="row"><button class="btn" type="button" id="btn-who">Cambiar quién soy</button><button class="btn" type="button" id="btn-unshare">Desconectar este teléfono</button></div>
-      </div>
-    </form>
+      <button class="btn" type="button" id="btn-retry" hidden>Reintentar conexión</button>
+      <details class="planb">
+        <summary>Otra forma: guardar en GitHub</summary>
+        <form class="form" id="f-share">
+          <p class="small">Solo si el modo automático no funciona. Los pasos están en el README.</p>
+          <label for="sh-owner">Usuario de GitHub</label>
+          <input id="sh-owner" autocomplete="off" spellcheck="false" placeholder="tu-usuario">
+          <label for="sh-repo">Repositorio</label>
+          <input id="sh-repo" autocomplete="off" spellcheck="false" value="mushu">
+          <label for="sh-token">Token de GitHub</label>
+          <input id="sh-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+          <p class="err" id="share-err" role="alert"></p>
+          <button class="btn" type="submit" id="btn-share">Conectar con GitHub</button>
+        </form>
+      </details>
+    </div>
     <form class="card form" id="f-petname">
       <h2>Mascota</h2>
       <label for="set-name">Nombre</label>

@@ -1,6 +1,6 @@
 # Mushu: mascota virtual de pareja
 
-Una mascota que criáis entre los dos desde vuestros teléfonos o computadoras. Funciona como una web estática en GitHub Pages y **no necesita ningún otro servicio**.
+Una mascota que criáis entre los dos desde vuestros teléfonos o computadoras. Funciona como una web estática en GitHub Pages; para compartirla basta con enviar un enlace.
 
 ## Qué hace
 
@@ -12,8 +12,8 @@ Una mascota que criáis entre los dos desde vuestros teléfonos o computadoras. 
 - **Cuidados:** comer (6 alimentos), acariciar (también deslizando el dedo sobre él) y bañar.
 - **Jugar:** abre un minijuego en el que Mushu atrapa balones, corazones y estrellas y tiene que esquivar las nubes.
 - **Dormir:** se acuesta en su cama con manta y **descansa 2 horas reales**. Durante ese tiempo no se le puede despertar, y tu pareja también lo ve dormido.
-- **Vida propia:** a veces lo pillas haciendo dominadas con el balón, leyendo, con el móvil o con su autito. El balón se puede patear.
-- **Armario:** coronita, cetro, gorro de superhéroe, gorros, gafas, chaquetas, bufandas, capas, zapatos y disfraces completos. Algunas prendas se desbloquean con los días de cuidados.
+- **Vida propia:** a veces lo pillas haciendo dominadas con el balón, leyendo, con el móvil o con su autito; al verte llegar se sorprende, suelta lo que tenía y te saluda. El balón se puede patear.
+- **Armario:** coronita, cetro, gorro y máscara de superhéroe, gorros, gafas, chaquetas, bufandas, capas, zapatos y disfraces completos. Algunas prendas se desbloquean con los días de cuidados.
 - **Icono:** si la añadís a la pantalla de inicio del teléfono, el icono es Mushu.
 
 ---
@@ -27,27 +27,21 @@ Una mascota que criáis entre los dos desde vuestros teléfonos o computadoras. 
 
 Al abrirlo aparece directamente **«¿Cómo se llamará nuestra mascota?»**. Escribe el nombre, la fecha de nacimiento, la racha (393), tu nombre y el de tu pareja.
 
-> Hasta que hagas el paso 2, Mushu vive solo en ese teléfono. Arriba lo indica: «Solo en este teléfono».
 
-## 2. Compartirlo con tu pareja (solo lo hace uno, una vez)
+## 2. Compartirlo con tu pareja (automático)
 
-Para que los dos veáis la misma mascota, los datos se guardan en un archivo de vuestro propio repositorio (`mushu.json`, en una rama llamada `datos`). Para que la app pueda escribir ahí necesita un **token** de GitHub.
+No hay que configurar nada:
 
-**Crear el token:**
-1. En GitHub ve a tu foto → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
-2. *Token name:* `mushu`. *Expiration:* la más larga que te deje (puedes renovarlo después).
-3. *Repository access:* **Only select repositories** → elige `mushu`.
-4. *Permissions → Repository permissions → **Contents**:* **Read and write**.
-5. Pulsa **Generate token** y copia el texto (empieza por `github_pat_`).
+1. Al crear a Mushu, la app guarda una copia compartida automáticamente y en la pantalla principal aparece **«Invita a …»**.
+2. Pulsa **Enviar enlace** y mándalo por WhatsApp a tu pareja (también está en **Ajustes → Compartir con tu pareja**).
+3. Tu pareja abre el enlace, toca su nombre y listo: los dos veis a la misma mascota. Lo que hace uno le aparece al otro con aviso y animación; la app mira si hay cambios cada 15 segundos y al volver a abrirla. Sin Internet, los cuidados se guardan y se envían al volver la conexión.
 
-**Conectar:**
-1. En la app, ve a **Ajustes → Compartir con tu pareja**. El usuario y el repositorio se rellenan solos. Pega el token y pulsa **Conectar**.
-2. Aparece un **código** que empieza por `MUSHU-`. Pulsa **Copiar** y envíaselo a tu pareja por un chat privado.
-3. Tu pareja abre el mismo enlace, elige **«Mi pareja ya la creó»**, pega el código y toca su nombre.
+Si ya tenías a Mushu creado en tu teléfono con la versión anterior, no hace falta empezar de nuevo: al abrir esta versión se conecta solo y aparece la invitación.
 
-A partir de ahí, lo que hace uno le aparece al otro, con aviso y animación. La app comprueba si hay cambios cada 15 segundos y cada vez que vuelves a abrirla. Si no hay Internet, los cuidados se guardan y se envían cuando vuelve la conexión.
+**Cómo funciona por dentro:** la copia compartida se guarda en [jsonblob.com](https://jsonblob.com), un servicio gratuito que no pide cuentas. El enlace contiene la dirección de esa copia, así que compártelo solo con tu pareja. Cada teléfono guarda además todos los datos, y en **Ajustes → Copia de seguridad** podéis descargar un archivo cuando queráis.
 
-**Privacidad:** el código y el token dan acceso a ese repositorio; compártelos solo con tu pareja. Si el repositorio es público, cualquiera podría leer el archivo de datos (el nombre de la mascota y los vuestros). Si prefieres que sea privado, crea otro repositorio **privado** (por ejemplo `mushu-datos`, con al menos un archivo), dale acceso al token y escribe ese nombre en el campo *Repositorio* antes de conectar. Si pierdes un teléfono, borra el token en GitHub y crea otro.
+**Plan B (solo si el modo automático fallara):** en **Ajustes → Compartir con tu pareja → Otra forma: guardar en GitHub** se puede usar vuestro repositorio con un token:
+GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → *Only select repositories*: `mushu` → *Contents: Read and write*.
 
 ## 3. Reglas y ajustes
 
@@ -76,7 +70,7 @@ npm test                      # pruebas de las reglas
 | `index.html`, `styles/app.css`, `manifest.webmanifest`, `icons/` | Interfaz e iconos |
 | `src/app/main.js` | Pantallas, cuidados, armario y evolución |
 | `src/app/rules.js` | Reglas: edad, etapas, racha, vidas, mudanza, sueño, límites |
-| `src/app/store.js` | Guardado en el teléfono y sincronización con GitHub |
+| `src/app/store.js` | Guardado en el teléfono y sincronización automática (jsonblob) o con GitHub |
 | `src/app/minigame.js` | Minijuego de jugar |
 | `src/app/box.js` | Caja de mudanza |
 | `src/pet/` | El personaje: dibujo, animaciones, actividades, ropa, cama, balón y partículas |

@@ -237,8 +237,8 @@ export class PetRig {
       const arm = el('path', {}, g);
       const sleeve = el('path', { display: 'none' }, g);
       const cuff = el('path', { display: 'none', fill: 'none', 'stroke-width': 3.2, 'stroke-linecap': 'round' }, g);
+      const held = el('g', { class: 'held' }, g); // detrás de los dedos: la mano lo agarra
       const hand = el('path', {}, g);
-      const held = el('g', { class: 'held' }, g);
       this._bind('armShade', shade, 'fill');
       this._bind('arm', arm, 'fill');
       this._bind('arm', hand, 'fill');
@@ -303,6 +303,8 @@ export class PetRig {
     const head = get('head'), face = get('face'), hand = get('hand'), body = get('body'), neck = get('neck'), back = get('back'), feet = get('feet');
     // los degradados de la ropa usan los de esta mascota (no los de otra vista oculta)
     const sc = (txt) => (txt || '').replace(/url\(#w-/g, `url(#${this.id}-w-`);
+    // con gorro, las puntas de la llama se aplastan debajo y el gorro se encaja en la cabeza
+    this.hatPress = head ? (head.press ?? 1) : 0;
     this.sockets.head.innerHTML = head ? `<g transform="translate(152 75) rotate(${head.tilt || 0}) scale(1.12)">${sc(head.svg)}</g>` : '';
     this.sockets.face.innerHTML = face ? sc(face.svg) : '';
     this.arms.R.held.innerHTML = hand ? sc(hand.svg) : '';
@@ -404,7 +406,8 @@ export class PetRig {
     this.hlEl.setAttribute('transform', `translate(${f1(-p.turn * 6 - p.lookX * 1.5)} ${f1(-p.lookY)})`);
     this.rimRect.setAttribute('transform', `translate(${f1(-p.turn * 8)} 0)`);
     const hk = `${f1(1000 / (1 - F.slim)) / 1000} ${f1(1000 / (1 + F.tall)) / 1000}`;
-    this.sockets.head.setAttribute('transform', `translate(${f1(this._headDx + 152)} ${f1(this._headDy + 68 - F.flame * 4)}) scale(${hk}) translate(-152 -68)`);
+    const hp = this.hatPress || 0;
+    this.sockets.head.setAttribute('transform', `translate(${f1(this._headDx + 152)} ${f1(this._headDy + 68 + hp * 13 - F.flame * 4 * (1 - hp))}) scale(${hk}) translate(-152 -68)`);
     if (this.outfit.back) {
       const c = itemById(this.outfit.back)?.cape;
       if (c) this.capeEl.setAttribute('d', capePath(time, this.flameLag));
@@ -455,7 +458,8 @@ export class PetRig {
 
   _bodyPath(p, time) {
     const t = time * p.flameSpeed;
-    const A = 3.1 * p.flameAmp;
+    const press = this.hatPress || 0;
+    const A = 3.1 * p.flameAmp * (1 - 0.75 * press);
     const n = this.noise;
     const droop = p.flameDroop, lift = p.flameLift, lag = this.flameLag;
     // desplazamiento de cada punta de llama (ruido suave + caída + inercia)
@@ -471,7 +475,13 @@ export class PetRig {
     for (const bp of BODY_POINTS) {
       const [x, y] = bp.p;
       let dx = 0, dy = 0;
-      if (bp.g) { const o = tip[bp.g]; dx = o[0] * bp.w; dy = o[1] * bp.w - this.form.flame * 9 * bp.w * (bp.g === 'N' ? 0.3 : bp.g === 'M' ? 1.2 : 1); }
+      if (bp.g) {
+        const o = tip[bp.g]; dx = o[0] * bp.w; dy = o[1] * bp.w - this.form.flame * 9 * bp.w * (bp.g === 'N' ? 0.3 : bp.g === 'M' ? 1.2 : 1) * (1 - press);
+        if (press) {
+          const sq = { L: [10, 24], M: [-3, 40], R: [-16, 24], N: [0, 8] }[bp.g];
+          dx += sq[0] * bp.w * press; dy += sq[1] * bp.w * press;
+        }
+      }
       if (y < 200) dx += sway * Math.pow((200 - y) / 170, 1.5);
       const belly = clamp((y - 110) / 80, 0, 1) * clamp((262 - y) / 40, 0, 1);
       dx += (x - BODY_CENTER_X) * br * 0.016 * belly;
@@ -611,7 +621,8 @@ export class PetRig {
     const rot = (v, a) => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
     for (const side of ['L', 'R']) {
       const A = ARMS[side], s = A.side;
-      const a1 = p[`arm${side}_a1`], a2 = p[`arm${side}_a2`], hand = p[`arm${side}_hand`], curl = p[`arm${side}_curl`];
+      const holding = side === 'R' && this.outfit.hand;
+      const a1 = p[`arm${side}_a1`] + (holding ? 0.22 : 0), a2 = p[`arm${side}_a2`], hand = p[`arm${side}_hand`] - (holding ? 0.35 : 0), curl = p[`arm${side}_curl`] + (holding ? 0.5 : 0);
       const S = [A.shoulder[0] - s * p.breathe * 0.6, A.shoulder[1] - p.breathe * 0.8];
       const grow = 1 + this.form.arms;
       const d1 = [s * Math.sin(a1), Math.cos(a1)];

@@ -1,9 +1,9 @@
 // Almacenamiento de la mascota.
 //
 // - Siempre guarda en este navegador (funciona sin configurar nada).
-// - Opcional: sincronización con un repositorio de GitHub para que los dos cuidadores vean la
-//   misma mascota. Los datos viven en el archivo `mushu.json` de la rama `datos` (así no se
-//   vuelve a publicar la web en cada cambio). Cada cambio es una operación (op) que se aplica
+// - Compartido automático: al crear la mascota se guarda una copia en jsonblob.com (gratis, sin
+//   cuentas) y la pareja entra con un enlace. Plan B: un repositorio de GitHub con token.
+//   Cada cambio es una operación (op) que se aplica
 //   sobre la versión más reciente del archivo: si los dos tocan a la vez, se reintenta sobre
 //   la versión nueva y no se pierde nada. Sin Internet, las ops quedan pendientes.
 
@@ -68,6 +68,7 @@ export function applyOp(data, op) {
       return;
     }
     case 'game': logIt('game', String(op.score)); return;
+    case 'joined': { const m = pet.members.find((x) => x.id === op.by); if (m && !m.joinedAt) m.joinedAt = op.at; return; }
     default: throw new Error('Operación desconocida');
   }
 }
@@ -135,12 +136,61 @@ class GitHub {
   }
 }
 
+// ---------------------------------------------------------------- jsonblob (automático)
+const BLOB = 'https://jsonblob.com/api/jsonBlob';
+class JsonBlob {
+  constructor({ id }) { this.id = id; this.kind = 'blob'; }
+  static async _fetch(url, opts = {}) {
+    try {
+      return await fetch(url, { cache: 'no-store', ...opts, headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(opts.headers || {}) } });
+    } catch { const e = new Error('Sin conexión con el servidor compartido.'); e.network = true; throw e; }
+  }
+  static async create(data) {
+    const res = await JsonBlob._fetch(BLOB, { method: 'POST', body: JSON.stringify({ ...data, rev: 1 }) });
+    if (!res.ok) throw new Error('No se pudo crear el espacio compartido.');
+    const loc = res.headers.get('Location') || res.headers.get('X-jsonblob') || res.headers.get('x-jsonblob-id') || '';
+    const id = loc.split('/').filter(Boolean).pop();
+    if (!id) throw new Error('El servicio compartido no devolvió el identificador.');
+    return id;
+  }
+  async check() { const r = await this.read(); if (!r) throw new Error('Ese enlace ya no existe. Pide a tu pareja que te envíe uno nuevo.'); }
+  async ensureBranch() {}
+  async read() {
+    const res = await JsonBlob._fetch(`${BLOB}/${this.id}`);
+    if (res.status === 404) return null;
+    if (!res.ok) { const e = new Error('No se pudieron leer los datos compartidos.'); e.network = res.status >= 500 || res.status === 429; throw e; }
+    const data = await res.json();
+    return { sha: String(data.rev || 0), data };
+  }
+  // Escribe y comprueba que nadie escribió a la vez; si lo hizo, devuelve null para reintentar.
+  async write(data, sha) {
+    const fresh = await this.read();
+    if (fresh && String(fresh.data.rev || 0) !== String(sha || 0)) return null;
+    const nonce = uid();
+    const body = { ...data, rev: (+sha || 0) + 1, writer: nonce };
+    const res = await JsonBlob._fetch(`${BLOB}/${this.id}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (!res.ok) { const e = new Error('No se pudieron guardar los datos compartidos.'); e.network = true; throw e; }
+    const check = await this.read();
+    return check && check.data.writer === nonce ? String(body.rev) : null;
+  }
+}
+const makeRemote = (cfg) => (cfg.kind === 'blob' ? new JsonBlob(cfg) : new GitHub(cfg));
+
+// Enlace de invitación (modo automático).
+export const inviteUrl = (cfg) => `${location.origin}${location.pathname}#mushu=${cfg.id}`;
+export function blobFromUrl(text) {
+  const m = String(text || '').match(/[#&?]mushu=([A-Za-z0-9-]{8,})/);
+  return m ? { kind: 'blob', id: m[1] } : null;
+}
+
 // Código para que la pareja se conecte: incluye el repositorio y el token.
 export const encodeLink = (cfg) => 'MUSHU-' + b64encode(JSON.stringify({ o: cfg.owner, r: cfg.repo, t: cfg.token })).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 export function decodeLink(code) {
+  const blob = blobFromUrl(code);
+  if (blob) return blob;
   const s = code.trim().replace(/^MUSHU-/i, '').replace(/-/g, '+').replace(/_/g, '/');
-  try { const j = JSON.parse(b64decode(s + '==='.slice((s.length + 3) % 4))); if (j.o && j.r && j.t) return { owner: j.o, repo: j.r, token: j.t }; } catch {}
-  throw new Error('Ese código no es válido. Cópialo completo, empieza por MUSHU-.');
+  try { const j = JSON.parse(b64decode(s + '==='.slice((s.length + 3) % 4))); if (j.o && j.r && j.t) return { kind: 'github', owner: j.o, repo: j.r, token: j.t }; } catch {}
+  throw new Error('No reconozco ese enlace o código. Ábrelo directamente desde el mensaje de tu pareja.');
 }
 
 // Si la web está en usuario.github.io/repositorio/, deduce el repositorio.
@@ -158,7 +208,7 @@ export class Store {
     this.data = null;
     this.meId = LS.get(ME_KEY);
     const cfg = JSON.parse(LS.get(SYNC_KEY) || 'null');
-    this.gh = cfg ? new GitHub(cfg) : null;
+    this.gh = cfg ? makeRemote(cfg) : null;
     this.sha = null;
     this.status = this.gh ? 'syncing' : 'local';
     this._busy = Promise.resolve();
@@ -190,6 +240,7 @@ export class Store {
       if (!this.synced) this.setMe(this.data.pet.members[0].id);
     }
     if (this.data) this._checkMovedOut();
+    if (this.data && !this.gh) this.autoShare();
     return this.pet;
   }
 
@@ -199,6 +250,21 @@ export class Store {
   _checkMovedOut() {
     const n = neglect(this.data.pet, new Date());
     if (n.movedOut && !this.data.pet.state.movedOutAt) this._op({ type: 'movedOut', day: n.movedOutDay }).catch(() => {});
+  }
+
+  // Crea el espacio compartido automático (sin cuentas). Si falla, se reintenta más tarde.
+  async autoShare() {
+    if (this.gh || !this.data) return false;
+    try {
+      const id = await JsonBlob.create(this.data);
+      const cfg = { kind: 'blob', id };
+      LS.set(SYNC_KEY, JSON.stringify(cfg));
+      this.gh = new JsonBlob(cfg);
+      this.sha = '1';
+      this._setStatus('online');
+      this._startPolling();
+      return true;
+    } catch { this._setStatus('local'); return false; }
   }
 
   async createPet({ name, birthDate, myName, partnerName, streak = 0 }) {
@@ -212,6 +278,7 @@ export class Store {
     this.setMe(a.id);
     this._save();
     if (this.gh) await this._push('Mushu: nueva mascota').catch(() => {});
+    else await this.autoShare();
     return this.pet;
   }
 
@@ -304,11 +371,11 @@ export class Store {
 
   // Conectar este dispositivo a GitHub. Devuelve 'pushed' (subió esta mascota) o 'adopted' (usó la que había).
   async connect(cfg, { prefer = 'remote' } = {}) {
-    const gh = new GitHub(cfg);
+    const gh = makeRemote(cfg);
     await gh.check();
     await gh.ensureBranch();
     const remote = await gh.read();
-    LS.set(SYNC_KEY, JSON.stringify({ owner: cfg.owner, repo: cfg.repo, token: cfg.token }));
+    LS.set(SYNC_KEY, JSON.stringify(cfg.kind === 'blob' ? { kind: 'blob', id: cfg.id } : { kind: 'github', owner: cfg.owner, repo: cfg.repo, token: cfg.token }));
     this.gh = gh;
     let result;
     if (remote && (prefer === 'remote' || !this.data)) {
@@ -322,7 +389,7 @@ export class Store {
   }
 
   async peekRemote(cfg) {
-    const gh = new GitHub(cfg);
+    const gh = makeRemote(cfg);
     await gh.check();
     const r = await gh.read().catch(() => null);
     return r?.data?.pet || null;
@@ -341,6 +408,7 @@ export class Store {
   recordEvolution(stage) { return this._op({ type: 'evolution', stage }); }
   resetPet(birthDate, streak = 0) { return this._op({ type: 'reset', birthDate, streak }); }
   logGame(score) { return this._op({ type: 'game', score }); }
+  markJoined() { const m = this.pet?.members.find((x) => x.id === this.meId); return m && !m.joinedAt ? this._op({ type: 'joined' }) : Promise.resolve({ ok: true }); }
   history() { return this.data?.log || []; }
   exportData() { return JSON.stringify(this.data, null, 2); }
   async importData(json) {

@@ -26,7 +26,7 @@ const G = {
   lens: `<linearGradient id="w-lens" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3550"/><stop offset="1" stop-color="#0e0c18"/></linearGradient>`,
   denim: `<linearGradient id="w-denim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5d8fd6"/><stop offset="1" stop-color="#2e5aa0"/></linearGradient>`,
   leather: `<linearGradient id="w-leather" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a4458"/><stop offset=".5" stop-color="#1d1a26"/><stop offset="1" stop-color="#2b2735"/></linearGradient>`,
-  hoodie: `<linearGradient id="w-hoodie" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a7a"/><stop offset="1" stop-color="#f0645a"/></linearGradient>`,
+  hoodie: `<linearGradient id="w-hoodie" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fe0a0"/><stop offset="1" stop-color="#2fb36b"/></linearGradient>`,
   mint: `<linearGradient id="w-mint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ff0cf"/><stop offset="1" stop-color="#3fc79b"/></linearGradient>`,
   purple: `<linearGradient id="w-purple" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9a6bff"/><stop offset="1" stop-color="#5a2fc4"/></linearGradient>`,
   night: `<linearGradient id="w-night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b4fd8"/><stop offset="1" stop-color="#1c2378"/></linearGradient>`,
@@ -46,11 +46,13 @@ const heart = (cx, cy, s, fill, extra = '') =>
   `<path transform="translate(${cx} ${cy}) scale(${s})" d="M0 9C-6 4 -11 .5 -11 -4.2C-11 -8 -7.8 -10 -5 -10C-2.6 -10 -.9 -8.6 0 -6.8C.9 -8.6 2.6 -10 5 -10C7.8 -10 11 -8 11 -4.2C11 .5 6 4 0 9Z" fill="${fill}" ${extra}/>`;
 
 // Línea de cuello común de chaquetas y suéteres (debajo de la boca).
-const NECK = 'M30 203 Q96 210 128 212 Q154 226 180 212 Q212 208 272 199 L272 300 L30 300 Z';
+// Cuello y hombros: suben por los lados para que la prenda abrace el cuerpo como un suéter.
+const NECK_EDGE = 'M30 164 Q70 174 104 194 Q122 208 132 212 Q154 226 176 212 Q186 206 206 192 Q236 174 272 160';
+const NECK = NECK_EDGE + ' L272 300 L30 300 Z';
 
 export const ITEMS = [
   // ---------------- gorros ----------------
-  { id: 'corona', slot: 'head', name: 'Coronita', tilt: -8, svg: `
+  { id: 'corona', slot: 'head', name: 'Coronita', tilt: -8, press: 0.8, svg: `
     <path d="M-33 -6 L-36 -34 L-22 -20 L-15 -43 L-6 -22 L0 -49 L6 -22 L15 -43 L22 -20 L36 -34 L33 -6 Z" fill="url(#w-gold)" stroke="#c07a0c" stroke-width="1.6" stroke-linejoin="round"/>
     <rect x="-35" y="-15" width="70" height="11" rx="4" fill="url(#w-gold)" stroke="#c07a0c" stroke-width="1.4"/>
     <circle cx="0" cy="-9.5" r="4" fill="#ff3d6e"/><circle cx="-20" cy="-9.5" r="3" fill="#4fb3ff"/><circle cx="20" cy="-9.5" r="3" fill="#4fb3ff"/>
@@ -83,7 +85,7 @@ export const ITEMS = [
     <ellipse cx="0" cy="-62" rx="29" ry="5" fill="#2e2b3a"/>
     <rect x="-31" y="-20" width="62" height="12" fill="#b23ef0"/>
     <path d="M-22 -56 L-20 -24" stroke="#fff" stroke-opacity=".18" stroke-width="5" stroke-linecap="round"/>` },
-  { id: 'fiesta', slot: 'head', name: 'Gorro de fiesta', tilt: 10, svg: `
+  { id: 'fiesta', slot: 'head', name: 'Gorro de fiesta', tilt: 10, press: 0.55, svg: `
     <path d="M-27 -2 L0 -72 L27 -2 Z" fill="#ff6fae"/>
     <path d="M-20 -20 L18 -28 L13 -40 L-13 -32 Z M-8 -52 L8 -56 L4 -64 L-4 -62 Z" fill="#ffd84d"/>
     <path d="M-27 -2 Q0 6 27 -2" stroke="#ff3d8e" stroke-width="3" fill="none"/>
@@ -105,7 +107,7 @@ export const ITEMS = [
     <circle cx="0" cy="-30" r="7" fill="#fff"/><rect x="-4" y="-26" width="8" height="5" rx="1.5" fill="#fff"/>
     <circle cx="-2.6" cy="-31" r="1.6" fill="#1a1822"/><circle cx="2.6" cy="-31" r="1.6" fill="#1a1822"/>
     <path d="M-12 -20 L12 -14 M12 -20 L-12 -14" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>` },
-  { id: 'orejas', slot: 'head', name: 'Orejitas de gato', tilt: 0, svg: `
+  { id: 'orejas', slot: 'head', name: 'Orejitas de gato', tilt: 0, press: 0.35, svg: `
     <path d="M-48 2 C-40 -36 40 -36 48 2" stroke="#2b2735" stroke-width="5" fill="none" stroke-linecap="round"/>
     <path d="M-44 -14 L-36 -46 L-18 -26 Z" fill="#2b2735"/><path d="M-38 -20 L-34 -38 L-24 -27 Z" fill="#ff8fc0"/>
     <path d="M44 -14 L36 -46 L18 -26 Z" fill="#2b2735"/><path d="M38 -20 L34 -38 L24 -27 Z" fill="#ff8fc0"/>` },
@@ -135,6 +137,13 @@ export const ITEMS = [
       M134 138 C150 138 156 150 156 160 C156 172 146 180 134 180 C120 180 112 170 112 158 C112 146 120 138 134 138 Z
       M182 137 C196 137 204 148 204 159 C204 171 196 180 182 180 C168 180 160 171 160 159 C160 148 168 137 182 137 Z"/>
     <path d="M96 150 L84 140 M220 150 L232 140" stroke="#1f4fc4" stroke-width="4" stroke-linecap="round"/>` },
+  { id: 'mascaraHeroe', slot: 'face', name: 'Máscara de superhéroe', svg: `
+    <path fill-rule="evenodd" fill="url(#w-red)" stroke="#8f1424" stroke-width="1.6" d="M92 148 C96 128 126 124 158 136 C190 124 220 128 224 148 C226 168 212 190 186 188 C170 187 162 179 158 172 C154 179 146 187 130 188 C104 190 90 168 92 148 Z
+      M134 138 C150 138 156 150 156 160 C156 172 146 180 134 180 C120 180 112 170 112 158 C112 146 120 138 134 138 Z
+      M182 137 C196 137 204 148 204 159 C204 171 196 180 182 180 C168 180 160 171 160 159 C160 148 168 137 182 137 Z"/>
+    <path d="M100 136 C120 126 140 128 156 136 M160 136 C176 128 198 126 216 136" stroke="url(#w-blue)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M158 141 l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8Z" fill="#ffd84d" stroke="#d98a12" stroke-width=".8" stroke-linejoin="round"/>
+    <path d="M92 148 L78 136 M224 148 L238 136" stroke="#1f4fc4" stroke-width="4.5" stroke-linecap="round"/>` },
   { id: 'parche', slot: 'face', name: 'Parche pirata', svg: `
     <path d="M100 126 L214 178" stroke="#1a1822" stroke-width="3.4" stroke-linecap="round"/>
     <path d="M112 148 C112 140 156 140 156 148 C156 166 146 180 134 180 C122 180 112 166 112 148 Z" fill="url(#w-black)"/>
@@ -166,15 +175,15 @@ export const ITEMS = [
     <circle cx="0" cy="-48" r="6" fill="#ffcc3d"/>` },
 
   // ---------------- chaquetas (recortadas a la silueta) ----------------
-  { id: 'sudadera', slot: 'body', name: 'Sudadera', sleeve: '#f0645a', cuff: '#d94a44', svg: `
+  { id: 'sudadera', slot: 'body', name: 'Sudadera', sleeve: '#3cbf74', cuff: '#23905a', svg: `
     <path d="${NECK}" fill="url(#w-hoodie)"/>
-    <path d="M30 203 Q96 210 128 212 Q154 226 180 212 Q212 208 272 199" stroke="#d94a44" stroke-width="5" fill="none"/>
+    <path d="${NECK_EDGE}" stroke="#23905a" stroke-width="5" fill="none"/>
     <path d="M140 220 L138 246 M168 220 L170 246" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
     <rect x="135" y="244" width="6" height="7" rx="2" fill="#fff"/><rect x="167" y="244" width="6" height="7" rx="2" fill="#fff"/>
-    <path d="M114 262 C118 236 190 236 196 262 Z" fill="#e85a52"/>
-    <path d="M114 262 C118 236 190 236 196 262" stroke="#c9423d" stroke-width="2" fill="none"/>` },
+    <path d="M114 262 C118 236 190 236 196 262 Z" fill="#36b86c"/>
+    <path d="M114 262 C118 236 190 236 196 262" stroke="#23905a" stroke-width="2" fill="none"/>` },
   { id: 'vaquera', slot: 'body', name: 'Chaqueta vaquera', sleeve: '#3f6fbc', cuff: '#2e5aa0', svg: `
-    <path d="M30 203 Q96 210 128 212 L140 260 L30 300 Z M272 199 Q212 208 180 212 L168 260 L272 300 Z" fill="url(#w-denim)"/>
+    <path d="M30 164 Q70 174 104 194 Q122 208 128 212 L140 260 L30 300 Z M272 160 Q236 174 206 192 Q186 206 180 212 L168 260 L272 300 Z" fill="url(#w-denim)"/>
     <path d="M30 300 L140 260 L168 260 L272 300 Z" fill="url(#w-denim)"/>
     <path d="M128 212 L146 238 L118 226 Z M180 212 L162 238 L190 226 Z" fill="#7fa8e6"/>
     <path d="M140 230 L141 262 M168 230 L167 262" stroke="#e8a64a" stroke-width="1.6" stroke-dasharray="3 3"/>
@@ -189,8 +198,8 @@ export const ITEMS = [
     <path d="M70 222 C80 240 82 256 80 270" stroke="#fff" stroke-opacity=".12" stroke-width="8" fill="none" stroke-linecap="round"/>` },
   { id: 'sueter', slot: 'body', name: 'Suéter de rayas', sleeve: '#2fb3a0', cuff: '#f6ecd6', svg: `
     <path d="${NECK}" fill="#f6ecd6"/>
-    ${[220, 236, 252, 268].map((y) => `<rect x="20" y="${y}" width="270" height="8" fill="#2fb3a0"/>`).join('')}
-    <path d="M30 203 Q96 210 128 212 Q154 226 180 212 Q212 208 272 199" stroke="#e9dcbd" stroke-width="7" fill="none"/>` },
+    ${[190, 206, 222, 238, 254, 270].map((y) => `<rect x="20" y="${y}" width="270" height="8" fill="#2fb3a0"/>`).join('')}
+    <path d="${NECK_EDGE}" stroke="#e9dcbd" stroke-width="7" fill="none"/>` },
   { id: 'traje', slot: 'body', name: 'Esmoquin', sleeve: '#1b1a24', cuff: '#ffffff', unlock: { careDays: 30 }, svg: `
     <path d="${NECK}" fill="url(#w-black)"/>
     <path d="M128 212 Q154 226 180 212 L162 262 L146 262 Z" fill="#fff"/>
@@ -224,7 +233,7 @@ export const ITEMS = [
 ];
 
 export const COSTUMES = [
-  { id: 'superheroe', name: 'Superhéroe', outfit: { head: 'heroe', face: 'antifaz', back: 'capa' } },
+  { id: 'superheroe', name: 'Superhéroe', outfit: { head: 'heroe', face: 'mascaraHeroe', back: 'capa', feet: 'botas' } },
   { id: 'rey', name: 'Rey', outfit: { head: 'corona', hand: 'cetro', back: 'capa', neck: 'perlas' } },
   { id: 'pirataD', name: 'Pirata', outfit: { head: 'pirata', face: 'parche', body: 'sueter' } },
   { id: 'magoD', name: 'Mago', outfit: { head: 'mago', hand: 'varita', back: 'capaMago' } },

@@ -87,6 +87,12 @@ export class PetView {
     return null;
   }
 
+  // Te ve llegar mientras hace algo: se sorprende (y suelta lo que tenía).
+  noticeYou() {
+    if (!this.anim.activity) return false;
+    return this.anim.request('caught').ok;
+  }
+
   // Dormir en la cama. `already` = ya estaba durmiendo al abrir la app (sin animación de acostarse).
   sleepInBed(already = false) {
     if (already) { this.anim._start('bedLoop', {}, true); return { ok: true }; }

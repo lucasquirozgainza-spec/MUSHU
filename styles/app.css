@@ -201,3 +201,10 @@ button.chip { cursor: pointer; }
 .mg-intro p { margin: 0; font-weight: 700; color: var(--text); max-width: 32ch; }
 .mg-intro .mg-note { font-size: 13px; color: var(--muted); }
 .mg-intro .btn { min-width: 160px; }
+
+/* ---- invitación y plan B ---- */
+.invite { display: grid; gap: 10px; padding: 14px; }
+.invite p { margin: 0; color: var(--ink); line-height: 1.35; }
+.planb { border-top: 1px solid color-mix(in srgb, var(--accent) 18%, #fff); padding-top: 8px; margin-top: 4px; }
+.planb summary { cursor: pointer; font-weight: 800; color: var(--muted); font-size: 13px; padding: 4px 0; }
+.planb[open] summary { margin-bottom: 6px; }

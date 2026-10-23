@@ -4,7 +4,7 @@
 import { PetView } from '../pet/index.js';
 
 const ITEMS = {
-  ball: { pts: 1, w: 34, svg: '<svg viewBox="-14 -14 28 28"><circle r="13" fill="#fff" stroke="#8d86a0"/><path d="M0 -5 L4.8 -1.5 L3 4 L-3 4 L-4.8 -1.5 Z" fill="#2b2735"/><path d="M0 -5 L0 -12.6 M4.8 -1.5 L11.8 -4.4 M3 4 L7.4 10.4 M-3 4 L-7.4 10.4 M-4.8 -1.5 L-11.8 -4.4" stroke="#2b2735" stroke-width="1.3"/></svg>' },
+  ball: { pts: 1, w: 44, svg: '<svg viewBox="-14 -14 28 28"><circle r="13" fill="#fff" stroke="#8d86a0"/><path d="M0 -5 L4.8 -1.5 L3 4 L-3 4 L-4.8 -1.5 Z" fill="#2b2735"/><path d="M0 -5 L0 -12.6 M4.8 -1.5 L11.8 -4.4 M3 4 L7.4 10.4 M-3 4 L-7.4 10.4 M-4.8 -1.5 L-11.8 -4.4" stroke="#2b2735" stroke-width="1.3"/></svg>' },
   heart: { pts: 2, w: 32, svg: '<svg viewBox="-12 -11 24 22"><path d="M0 9C-6 4 -11 .5 -11 -4.2C-11 -8 -7.8 -10 -5 -10C-2.6 -10 -.9 -8.6 0 -6.8C.9 -8.6 2.6 -10 5 -10C7.8 -10 11 -8 11 -4.2C11 .5 6 4 0 9Z" fill="#ff4f7b"/><path d="M-7 -6C-6 -8 -4 -8.4 -3 -8" stroke="#fff" stroke-opacity=".7" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
   star: { pts: 3, w: 34, svg: '<svg viewBox="-12 -12 24 24"><path d="M0 -11L3.2 -3.6L11 -3L5 2.2L6.8 10L0 6L-6.8 10L-5 2.2L-11 -3L-3.2 -3.6Z" fill="#ffd84d" stroke="#ffb01f" stroke-width="1.2" stroke-linejoin="round"/></svg>' },
   cloud: { pts: -2, w: 44, svg: '<svg viewBox="-22 -16 44 34"><path d="M-14 4a7 7 0 0 1 1-14 10 10 0 0 1 19-2 8 8 0 0 1 9 16Z" fill="#8a93a8"/><path d="M-8 9l-2 5M0 9l-2 6M8 9l-2 5" stroke="#5fb5ff" stroke-width="2.4" stroke-linecap="round"/></svg>' },

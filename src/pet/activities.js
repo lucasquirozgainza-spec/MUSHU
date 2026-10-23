@@ -32,7 +32,7 @@ export const ACTIVITY_CLIPS = {
     sample: (t, c) => {
       const b = c.scene?.ball;
       const P = c.d.period;
-      const footX = LEGS.R.ankle[0] + c.pose.x + 24, ground = b ? b.ground : 275;
+      const footX = LEGS.R.ankle[0] + c.pose.x + 34, ground = b ? b.ground : 275;
       const play = t > 0.8 && t < c.def.duration - 1.6;
       const n = Math.floor((t - 0.8) / P), u = ((t - 0.8) / P) % 1;
       const header = n % 5 === 4; // cada quinto toque, de cabeza
@@ -132,6 +132,32 @@ export const ACTIVITY_CLIPS = {
     },
     every: [[2.24, (c) => { const p = [c.scene?.toyX ?? 205, 255]; c.fx.sparkles(p[0], p[1], 3, 14, '#fff3a6'); }]],
     end: (c) => { c.scene?.setToy(false); if (c.scene?.ball) c.scene.ball.visible = true; },
+  },
+
+  // ---------------- ¡lo pillaste! ----------------
+  // Al abrir la app mientras hace algo: se sobresalta, suelta lo que tenía y luego sonríe
+  // un poco avergonzado y saluda.
+  caught: {
+    duration: 3.2, priority: 2, interruptible: true, fadeIn: 0.04, fadeOut: 0.5,
+    sample: (t) => {
+      const jump = hop(t, 0.02, 0.42, 20);
+      const startle = K(t, [[0, 0], [0.06, 1, 'out'], [0.9, 1], [1.3, 0]]);
+      const shy = K(t, [[0, 0], [1.0, 0], [1.4, 1], [3.2, 1]]);
+      const wave = shy * Math.sin(t * 11);
+      return {
+        y: jump, feetY: jump,
+        squash: K(t, [[0, 0], [0.03, -0.12], [0.42, 0.1], [0.6, -0.03], [0.8, 0]]),
+        flameAmp: 1 + startle * 1.8, flameLift: startle * 0.8,
+        lidL: lerp(lerp(0.405, 0.04, startle), 0.36, shy), lidR: lerp(lerp(0.405, 0.04, startle), 0.36, shy),
+        irisScale: 1 - 0.18 * startle, lookX: lerp(0.9, 0, shy), lookY: lerp(-0.2, 0.05, shy), turn: 0.3 * (1 - shy),
+        browL_raise: 7 * startle + 3 * shy, browR_raise: 4 * startle - 1 * shy, browL_inner: 3 * shy, browR_inner: 2 * shy,
+        mouthOpen: 0.7 * startle, mouthWidth: lerp(lerp(1, 0.4, startle), 0.85, shy), mouthCurve: lerp(0, 0.7, shy), mouthHook: 0, mouthAsym: lerp(0, -0.8, shy), tongue: 0,
+        blush: 0.85 * shy,
+        armL_a1: RL.a1 + 1.1 * startle, armL_a2: RL.a2 + 0.6 * startle, armL_hand: RL.hand - 1.2 * startle,
+        armR_a1: lerp(RR.a1 + 1.1 * startle, 2.5, shy), armR_a2: lerp(RR.a2 + 0.6 * startle, 0.35 + wave * 0.35, shy), armR_hand: lerp(RR.hand - 1.2 * startle, 0.4, shy), armR_curl: lerp(RR.curl, 0.2, shy),
+      };
+    },
+    events: [[0.08, (c) => { const p = c.rig.toWorld([196, 70]); c.fx.sparkles(p[0], p[1], 5, 16); }]],
   },
 
   // ---------------- a la cama ----------------
