@@ -79,6 +79,13 @@ export const ITEMS = [
     <circle cx="0" cy="-52" r="4" fill="#3d1d93"/>
     <path d="M-34 -34 C-26 -44 -14 -49 -2 -50" stroke="#fff" stroke-opacity=".35" stroke-width="4" fill="none" stroke-linecap="round"/>
     <text x="0" y="-18" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-weight="800" font-size="16" fill="#ffd84d">M</text>` },
+  { id: 'gorraRoja', slot: 'head', name: 'Gorra roja y azul', tilt: -3, svg: `
+    <path d="M-40 -2 C-30 -14 30 -14 40 -2 C52 6 50 14 36 14 C14 8 -14 8 -36 14 C-50 14 -52 6 -40 -2 Z" fill="#1f2f5c"/>
+    <path d="M-34 6 C-12 2 12 2 34 6" stroke="#3a4f86" stroke-width="1.6" fill="none"/>
+    <path d="M-47 0 C-49 -36 -24 -54 0 -54 C24 -54 49 -36 47 0 C30 -6 -30 -6 -47 0 Z" fill="url(#w-red)"/>
+    <path d="M0 -54 V-4 M-25 -48 C-31 -32 -33 -16 -33 -3 M25 -48 C31 -32 33 -16 33 -3" stroke="#a3152a" stroke-opacity=".55" stroke-width="1.8" fill="none"/>
+    <circle cx="0" cy="-54" r="4.4" fill="#1f2f5c"/>
+    <path d="M-35 -35 C-27 -45 -15 -50 -3 -51" stroke="#fff" stroke-opacity=".35" stroke-width="4" fill="none" stroke-linecap="round"/>` },
   { id: 'copa', slot: 'head', name: 'Sombrero de copa', tilt: -7, unlock: { careDays: 15 }, svg: `
     <ellipse cx="0" cy="-4" rx="54" ry="9" fill="#1a1822"/>
     <path d="M-31 -6 L-29 -62 C-29 -66 29 -66 29 -62 L31 -6 Z" fill="url(#w-black)"/>

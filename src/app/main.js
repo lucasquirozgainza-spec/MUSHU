@@ -5,7 +5,7 @@ import { STAGES, stageById } from '../pet/stages.js';
 import { FOODS, foodIcon } from '../pet/food.js';
 import { SLOTS, ITEMS, COSTUMES, itemById, itemThumb, isUnlocked } from '../pet/wardrobe.js';
 import { derive, canDo, ACTIONS, MILESTONES, localDay, addDays, dayDiff, SLEEP_MIN } from './rules.js';
-import { Store, decodeLink, guessRepo, inviteUrl, blobFromUrl } from './store.js';
+import { Store, parseInvite } from './store.js';
 import { MiniGame } from './minigame.js';
 import { boxSVG } from './box.js';
 
@@ -58,21 +58,12 @@ async function boot() {
   try { pet = await store.init(); } catch (e) { pet = store.pet; }
   store.subscribe(onStore);
   // ¿Se abrió el enlace de invitación de la pareja?
-  const invite = blobFromUrl(location.hash);
+  const invite = parseInvite(location.hash);
   if (invite) {
+    const hash = location.hash;
     history.replaceState(null, '', location.pathname + location.search);
-    const cur = store.syncConfig;
-    if (!cur || cur.id !== invite.id) {
-      try {
-        const remote = await store.peekRemote(invite);
-        if (!remote) throw new Error('Ese enlace ya no existe. Pide a tu pareja que te envíe uno nuevo.');
-        await store.connect(invite, { prefer: 'remote' });
-        pet = store.pet;
-        return showWho();
-      } catch (err) {
-        if (!pet) { showWelcome(); joinTab(); $('#join-err').textContent = err.message; return; }
-      }
-    }
+    try { pet = await store.joinFromLink(hash); if (store.needsIdentity()) return showWho(); }
+    catch (err) { if (!pet) { showWelcome(); joinTab(); $('#join-err').textContent = err.message; return; } }
   }
   if (!pet) return showWelcome();
   if (store.needsIdentity()) return showWho();
@@ -114,11 +105,7 @@ $('#f-join').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.submitter; btn.disabled = true; $('#join-err').textContent = '';
   try {
-    const cfg = decodeLink($('#in-code').value);
-    const remote = await store.peekRemote(cfg);
-    if (!remote) throw new Error('Todavía no hay ninguna mascota guardada. Pide a tu pareja que la conecte primero desde Ajustes.');
-    await store.connect(cfg, { prefer: 'remote' });
-    pet = store.pet;
+    pet = await store.joinFromLink($('#in-code').value);
     showWho();
   } catch (err) { $('#join-err').textContent = err.message; }
   btn.disabled = false;
@@ -166,7 +153,7 @@ function enterMain(firstTime = false) {
 }
 
 function onStore(type, data) {
-  if (type === 'status') return renderStatus();
+  if (type === 'status') { renderStatus(); if (currentView === 'settings' && pet) renderSettings(); return; }
   if (!pv) return;
   if (type === 'pet') {
     const prevOutfit = JSON.stringify(pet?.state.outfit || {});
@@ -262,7 +249,7 @@ function renderStatus() {
   const st = store.status;
   s.dataset.s = st;
   const pend = store.pendingCount;
-  s.textContent = st === 'local' ? 'Solo en este teléfono'
+  s.textContent = st === 'local' ? 'Conectando…'
     : st === 'online' ? 'Compartido con tu pareja'
     : st === 'syncing' ? 'Guardando…'
     : `Sin conexión${pend ? ` · ${pend} pendiente${pend > 1 ? 's' : ''}` : ''}`;
@@ -270,17 +257,14 @@ function renderStatus() {
 
 // Tarjeta para invitar a la pareja mientras todavía no ha entrado
 function renderInvite() {
-  const cfg = store.syncConfig;
   const partner = pet.members.find((m) => m.id !== store.meId);
-  const show = !!cfg && cfg.kind === 'blob' && partner && !partner.joinedAt && !LS.get('mascota.inviteHidden');
+  const show = store.synced && partner && !partner.joinedAt;
   $('#invite').hidden = !show;
   if (show) $('#invite-title').textContent = `Invita a ${partner.name}`;
 }
 async function sendInvite() {
-  const cfg = store.syncConfig;
-  if (!cfg || cfg.kind !== 'blob') { toast('Todavía conectando… inténtalo en unos segundos.'); return; }
-  const url = inviteUrl(cfg);
-  const text = `Te invito a cuidar a ${pet.name} conmigo: ${url}`;
+  const url = await store.inviteUrl();
+  const text = `Te invito a cuidar a ${pet.name} conmigo 💜`;
   if (navigator.share) { try { await navigator.share({ title: pet.name, text, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   copyText(url, 'Enlace copiado. Pégalo en vuestro chat.');
 }
@@ -289,7 +273,7 @@ async function copyText(text, msg) {
   catch { $('#invite-link').value = text; $('#invite-link').select(); toast('Selecciona y copia el enlace'); }
 }
 $('#btn-invite-send').addEventListener('click', sendInvite);
-$('#btn-invite-copy').addEventListener('click', () => { const c = store.syncConfig; if (c?.kind === 'blob') copyText(inviteUrl(c), 'Enlace copiado'); });
+$('#btn-invite-copy').addEventListener('click', async () => copyText(await store.inviteUrl(), 'Enlace copiado'));
 
 function renderCarer() {
   const c = $('#carer');
@@ -341,18 +325,18 @@ function updateCooldowns() {
     const id = b.dataset.act, w = b.querySelector('.wait');
     if (d.sleepUntil) { b.classList.toggle('cool', id !== 'pet'); w.textContent = id === 'sleep' ? `hasta ${fmtTime(d.sleepUntil)}` : ''; continue; }
     if (!ACTIONS[id] || id === 'feed') { w.textContent = ''; b.classList.remove('cool'); continue; }
-    const c = canDo(pet, id, null, now);
+    const c = canDo(pet, id, null, now, store.meId);
     b.classList.toggle('cool', !c.ok && id !== 'play');
     w.textContent = c.waitMin ? `${c.waitMin} min` : (!c.ok && id !== 'play' ? 'hoy no' : '');
   }
-  for (const f of document.querySelectorAll('#tray .food')) f.classList.toggle('cool', !canDo(pet, 'feed', f.dataset.food, now).ok);
+  for (const f of document.querySelectorAll('#tray .food')) f.classList.toggle('cool', !canDo(pet, 'feed', f.dataset.food, now, store.meId).ok);
 }
 
 const ANIM_REASON = { sleeping: 'Está durmiendo. Déjalo descansar.', busy: 'Espera a que termine.' };
 
 async function perform(action, item) {
   const now = new Date();
-  const chk = canDo(pet, action, item, now);
+  const chk = canDo(pet, action, item, now, store.meId);
   if (!chk.ok) { if (chk.sleeping) pv.act('poke'); toast(chk.reason); return; }
   let r;
   if (action === 'feed') r = pv.feed(FOODS.find((f) => f.id === item));
@@ -389,7 +373,7 @@ function openGame() {
   const now = new Date();
   const d = derive(pet, now, store.meId);
   if (d.sleepUntil) { toast(ANIM_REASON.sleeping); return; }
-  const chk = canDo(pet, 'play', null, now);
+  const chk = canDo(pet, 'play', null, now, store.meId);
   pv.stop();
   new MiniGame({
     stage: d.stageId, outfit: pet.state.outfit, name: pet.name,
@@ -415,7 +399,7 @@ function onPetTouch(kind, r) {
   if (kind === 'ball') return;
   if (!r.ok) { toast(r.reason === 'sleeping' ? 'Shh… está durmiendo' : (ANIM_REASON[r.reason] || 'Ahora no puede.')); return; }
   if (r.woke) toast('¡Lo despertaste!');
-  if (kind === 'pet' && canDo(pet, 'pet', null, new Date()).ok) {
+  if (kind === 'pet' && canDo(pet, 'pet', null, new Date(), store.meId).ok) {
     store.act('pet', null).then((res) => { if (res.pet) pet = res.pet; render(); });
   }
 }
@@ -536,22 +520,11 @@ function renderHistory() {
 
 // ---------------------------------------------------------------- ajustes
 function renderSettings() {
-  const cfg = store.syncConfig;
   const me = pet.members.find((m) => m.id === store.meId);
   const partner = pet.members.find((m) => m.id !== store.meId);
-  $('#share-link-box').hidden = !cfg;
-  $('#btn-retry').hidden = !!cfg;
-  if (!cfg) $('#share-state').textContent = 'Todavía no se pudo conectar (¿hay Internet?). Mientras tanto, Mushu vive en este teléfono.';
-  else if (cfg.kind === 'blob') {
-    $('#share-state').textContent = `Conexión automática activa. Eres ${me?.name || '?'}. ${partner?.joinedAt ? `${partner.name} ya está conectada/o.` : `${partner?.name || 'Tu pareja'} todavía no ha abierto el enlace.`}`;
-    $('#invite-link').value = inviteUrl(cfg);
-  } else {
-    $('#share-state').textContent = `Conectado a GitHub (${cfg.owner}/${cfg.repo}). Eres ${me?.name || '?'}.`;
-    $('#share-link-box').hidden = true;
-  }
-  const g = guessRepo();
-  if (!$('#sh-owner').value) $('#sh-owner').value = g.owner;
-  if (g.repo && !/\.github\.io$/.test(g.repo)) $('#sh-repo').value = g.repo;
+  const online = store.status === 'online';
+  $('#share-state').textContent = `${online ? 'Conectado automáticamente.' : `Sin conexión ahora mismo${store.lastError ? ` (${store.lastError})` : ''}; los cuidados se guardan y se enviarán solos.`} Eres ${me?.name || '?'}. ${partner?.joinedAt ? `${partner.name} ya está con vosotros.` : `${partner?.name || 'Tu pareja'} todavía no ha abierto el enlace.`}`;
+  store.inviteUrl().then((u) => { $('#invite-link').value = u; });
   $('#set-name').value = pet.name;
   $('#names-fields').innerHTML = pet.members.map((m, i) => `<label for="set-m${i}">Cuidador ${i + 1}${m.id === store.meId ? ' (tú)' : ''}</label><input id="set-m${i}" data-id="${esc(m.id)}" maxlength="24" required value="${esc(m.name)}">`).join('');
   $('#set-birth').value = pet.birthDate;
@@ -560,29 +533,9 @@ function renderSettings() {
   $('#set-d3').value = pet.settings.stageDays[2];
   $('#time-fields').hidden = true; $('#time-fields').disabled = true; $('#btn-unlock').hidden = false;
 }
-$('#f-share').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const cfg = { kind: 'github', owner: $('#sh-owner').value.trim(), repo: $('#sh-repo').value.trim(), token: $('#sh-token').value.trim() };
-  $('#share-err').textContent = '';
-  if (!cfg.owner || !cfg.repo || !cfg.token) { $('#share-err').textContent = 'Rellena el usuario, el repositorio y el token.'; return; }
-  const btn = $('#btn-share'); btn.disabled = true; btn.textContent = 'Conectando…';
-  try {
-    const remote = await store.peekRemote(cfg);
-    // Si ya hay una mascota guardada distinta, se mantiene la de GitHub (la de tu pareja)
-    const prefer = remote && remote.id !== pet.id ? 'remote' : 'local';
-    const res = await store.connect(cfg, { prefer });
-    pet = store.pet;
-    if (res === 'adopted' && store.needsIdentity()) { showWho(); return; }
-    pv.setOutfit(pet.state.outfit);
-    render(); renderSettings();
-    toast(res === 'adopted' ? 'Conectado: se cargó la mascota guardada en GitHub.' : 'Conectado con GitHub.');
-  } catch (err) { $('#share-err').textContent = err.message; }
-  btn.disabled = false; btn.textContent = 'Conectar con GitHub';
-});
 $('#btn-copy').addEventListener('click', () => copyText($('#invite-link').value, 'Enlace copiado'));
 $('#btn-send').addEventListener('click', sendInvite);
 $('#btn-who').addEventListener('click', () => showWho());
-$('#btn-retry').addEventListener('click', async () => { const ok = await store.autoShare(); renderSettings(); render(); toast(ok ? 'Conectado' : 'Sigue sin conexión. Prueba en un rato o usa la opción de GitHub.'); });
 $('#f-petname').addEventListener('submit', async (e) => {
   e.preventDefault();
   const r = await store.updatePet({ name: $('#set-name').value.trim() }); pet = r.pet; render(); toast('Nombre guardado');

@@ -144,7 +144,7 @@ export function derive(pet, now, meId) {
 }
 
 // ¿Se puede hacer esta acción ahora? → { ok, reason, waitMin }
-export function canDo(pet, action, item, now) {
+export function canDo(pet, action, item, now, memberId = null) {
   const def = ACTIONS[action];
   if (!def) return { ok: false, reason: 'Acción desconocida.' };
   if (neglect(pet, now).movedOut) return { ok: false, reason: `${pet.name} ya se independizó.` };
@@ -163,7 +163,8 @@ export function canDo(pet, action, item, now) {
     if (cap && (t.counts[key] || 0) >= cap) return { ok: false, reason: `Ya comió ${food.name.toLowerCase()} hoy.` };
   }
   if ((t.counts[action] || 0) >= def.dailyMax) return { ok: false, reason: 'Ya hizo eso bastante por hoy.' };
-  const last = t.last[action];
+  // el tiempo de espera es de cada cuidador (así los dos pueden cuidarlo a la vez)
+  const last = action === 'sleep' ? t.last[action] : (t.last[`${action}:${memberId}`] || (memberId ? null : t.last[action]));
   if (last) {
     const wait = def.cooldownMin - (now - new Date(last)) / 60000;
     if (wait > 0) return { ok: false, reason: `Espera ${Math.ceil(wait)} min.`, waitMin: Math.ceil(wait) };
@@ -174,7 +175,7 @@ export function canDo(pet, action, item, now) {
 
 // Aplica una acción (pura): devuelve una copia del pet y la entrada del historial.
 export function applyAction(pet, { action, item = null, memberId }, now) {
-  const chk = canDo(pet, action, item, now);
+  const chk = canDo(pet, action, item, now, memberId);
   if (!chk.ok) { const e = new Error(chk.reason); e.rule = true; throw e; }
   const p = structuredClone(pet);
   const s = p.state;
@@ -189,6 +190,7 @@ export function applyAction(pet, { action, item = null, memberId }, now) {
   s.today.counts[action] = (s.today.counts[action] || 0) + 1;
   if (action === 'feed') s.today.counts[`feed:${item}`] = (s.today.counts[`feed:${item}`] || 0) + 1;
   s.today.last[action] = now.toISOString();
+  s.today.last[`${action}:${memberId}`] = now.toISOString();
   // día de cuidado + racha (los días sin cuidado cubiertos por una vida no la rompen)
   if (s.lastCareDay !== today) s.careDaysTotal += 1;
   s.lastCareDay = today;

@@ -1,49 +1,55 @@
-// Almacenamiento de la mascota.
+// Almacenamiento y sincronización automática de la mascota (sin cuentas ni configuración).
 //
-// - Siempre guarda en este navegador (funciona sin configurar nada).
-// - Compartido automático: al crear la mascota se guarda una copia en jsonblob.com (gratis, sin
-//   cuentas) y la pareja entra con un enlace. Plan B: un repositorio de GitHub con token.
-//   Cada cambio es una operación (op) que se aplica
-//   sobre la versión más reciente del archivo: si los dos tocan a la vez, se reintenta sobre
-//   la versión nueva y no se pierde nada. Sin Internet, las ops quedan pendientes.
+// Modelo
+//   - Cada teléfono guarda un "punto de partida" (base) y la lista completa de cambios (ops):
+//     comer, acariciar, ropa, ajustes… Cada op lleva fecha, autor y un identificador único.
+//   - El estado visible se calcula reaplicando todas las ops en orden de fecha sobre la base,
+//     con las mismas reglas en los dos teléfonos (rules.js). Así, aunque los cambios lleguen
+//     en distinto orden, los dos llegan exactamente al mismo resultado, y una op repetida o
+//     fuera de tiempo se descarta igual en ambos.
+//
+// Compartir
+//   - El enlace de invitación contiene la base comprimida y un canal privado aleatorio, así que
+//     tu pareja recibe la mascota completa al abrirlo aunque tú no estés conectado.
+//   - Los cambios viajan por ntfy.sh (servicio abierto y gratuito, sin cuentas) por ese canal.
+//     ntfy solo guarda los mensajes unas horas, por eso cada teléfono reenvía sus cambios hasta
+//     que el otro confirma que los tiene: nada se pierde aunque no coincidáis conectados.
 
-import { newPetState, applyAction, neglect, DEFAULT_SETTINGS, stageFor, ageInDays } from './rules.js';
+import { newPetState, applyAction, neglect, DEFAULT_SETTINGS, stageFor, ageInDays, localDay, dayDiff } from './rules.js';
 
-const KEY = 'mascota.local.v1';
-const SYNC_KEY = 'mascota.sync.v1';
+const KEY = 'mascota.repl.v3';
+const OLD_KEY = 'mascota.local.v1';
 const ME_KEY = 'mascota.me.v1';
-const PENDING_KEY = 'mascota.pending.v2';
-const API = 'https://api.github.com';
+const DEV_KEY = 'mascota.device.v1';
+const NTFY = 'https://ntfy.sh';
 const POLL_MS = 15000;
+const RESEND_MS = 3 * 60000;
+const MAX_MSG = 3600;
 
 const LS = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const b64encode = (str) => { const bytes = new TextEncoder().encode(str); let bin = ''; for (const b of bytes) bin += String.fromCharCode(b); return btoa(bin); };
-const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+const randomTopic = () => 'mushu-' + Array.from(crypto.getRandomValues(new Uint8Array(15)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
+const bytes = (s) => new TextEncoder().encode(s).length;
 
 class RuleError extends Error { constructor(m) { super(m); this.rule = true; } }
 
 // ---------------------------------------------------------------- operaciones
-// Cada op es serializable para poder guardarla pendiente y reaplicarla sobre la versión remota.
 export function applyOp(data, op) {
   const pet = data.pet;
   const now = new Date(op.at);
   const who = pet.members.find((m) => m.id === op.by);
   const logIt = (action, item = null) => {
     data.log.unshift({ id: op.id, memberId: op.by, name: who?.name || '?', action, item, at: op.at });
-    data.log = data.log.slice(0, 400);
+    if (data.log.length > 400) data.log.length = 400;
   };
   switch (op.type) {
     case 'act': {
-      if (data.log.some((l) => l.id === op.id)) return; // ya aplicada
-      try {
-        const r = applyAction(pet, { action: op.action, item: op.item, memberId: op.by }, now);
-        data.pet = r.pet;
-      } catch (e) { if (e.rule) throw new RuleError(e.message); throw e; }
+      try { data.pet = applyAction(pet, { action: op.action, item: op.item, memberId: op.by }, now).pet; }
+      catch (e) { if (e.rule) throw new RuleError(e.message); throw e; }
       logIt(op.action, op.item);
       return;
     }
@@ -61,186 +67,140 @@ export function applyOp(data, op) {
       }
       return;
     case 'movedOut': if (!pet.state.movedOutAt) pet.state.movedOutAt = op.day; return;
-    case 'reset': {
+    case 'reset':
       pet.birthDate = op.birthDate;
       pet.state = { ...newPetState(now, pet.tz, op.streak || 0), outfit: pet.state.outfit || {} };
       logIt('reset');
       return;
-    }
     case 'game': logIt('game', String(op.score)); return;
-    case 'joined': { const m = pet.members.find((x) => x.id === op.by); if (m && !m.joinedAt) m.joinedAt = op.at; return; }
-    default: throw new Error('Operación desconocida');
+    case 'joined': { if (who && !who.joinedAt) who.joinedAt = op.at; return; }
+    default: return; // ops de versiones futuras: se ignoran
   }
 }
 
-function migrate(data) {
-  data.v = data.v || 1;
-  data.log = data.log || [];
-  const p = data.pet;
+const opOrder = (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+function migratePet(p) {
   p.settings = p.settings || structuredClone(DEFAULT_SETTINGS);
   const st = p.state;
   st.outfit = st.outfit || {}; st.togetherDays = st.togetherDays || 0;
   if (!('sleepUntil' in st)) st.sleepUntil = null;
   st.evolutions = st.evolutions || [];
-  return data;
+  return p;
 }
 
-// ---------------------------------------------------------------- GitHub
-class GitHub {
-  constructor({ owner, repo, token, branch = 'datos', path = 'mushu.json' }) {
-    Object.assign(this, { owner, repo, token, branch, path });
-  }
-  async _req(method, url, body) {
+// Base compacta: lo necesario para que los dos teléfonos calculen lo mismo.
+function trimBase(base) {
+  const b = structuredClone(base);
+  const today = localDay(new Date(), b.pet.tz);
+  for (const d of Object.keys(b.pet.state.days || {})) if (dayDiff(d, today) > 40) delete b.pet.state.days[d];
+  return b;
+}
+
+// ---------------------------------------------------------------- enlace
+const b64url = (u8) => { let s = ''; for (const x of u8) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+async function pipe(u8, stream) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(stream)).arrayBuffer()); }
+
+async function packBase(base) {
+  const raw = new TextEncoder().encode(JSON.stringify({ pet: base.pet }));
+  if (typeof CompressionStream !== 'undefined') { try { return 'z' + b64url(await pipe(raw, new CompressionStream('deflate-raw'))); } catch {} }
+  return 'p' + b64url(raw);
+}
+async function unpackBase(s) {
+  const kind = s[0], u8 = unb64url(s.slice(1));
+  const raw = kind === 'z' ? await pipe(u8, new DecompressionStream('deflate-raw')) : u8;
+  const j = JSON.parse(new TextDecoder().decode(raw));
+  return { pet: migratePet(j.pet), log: [] };
+}
+
+// Extrae { topic, packed } de un enlace (o del #hash actual).
+export function parseInvite(text) {
+  const m = String(text || '').match(/[#&?]m=(mushu-[a-z0-9]{10,})~([A-Za-z0-9_-]+)/);
+  return m ? { topic: m[1], packed: m[2] } : null;
+}
+
+// ---------------------------------------------------------------- ntfy
+class Relay {
+  constructor(topic) { this.topic = topic; }
+  async poll(since) {
     let res;
-    try {
-      res = await fetch(API + url, {
-        method, cache: 'no-store',
-        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-    } catch { const e = new Error('Sin conexión con GitHub.'); e.network = true; throw e; }
-    if (res.status === 401) throw new Error('El token de GitHub no es válido o caducó.');
-    if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') { const e = new Error('GitHub pide esperar unos minutos (límite de uso).'); e.network = true; throw e; }
-    const json = res.status === 204 ? null : await res.json().catch(() => null);
-    return { status: res.status, json };
+    try { res = await fetch(`${NTFY}/${this.topic}/json?poll=1&since=${encodeURIComponent(since || 'all')}`, { cache: 'no-store' }); }
+    catch { const e = new Error('Sin conexión.'); e.network = true; throw e; }
+    if (!res.ok) { const e = new Error(`El canal compartido respondió ${res.status}.`); e.network = true; throw e; }
+    const out = [];
+    for (const line of (await res.text()).split('\n')) {
+      if (!line.trim()) continue;
+      try { const m = JSON.parse(line); if (m.event === 'message') out.push(m); } catch {}
+    }
+    return out;
   }
-  async check() {
-    const r = await this._req('GET', `/repos/${this.owner}/${this.repo}`);
-    if (r.status === 404) throw new Error(`No encuentro el repositorio ${this.owner}/${this.repo}, o el token no tiene acceso a él.`);
-    if (r.status !== 200) throw new Error('GitHub respondió con un error al comprobar el repositorio.');
-    if (r.json.permissions && !r.json.permissions.push) throw new Error('El token no tiene permiso de escritura (Contents: Read and write).');
-    return r.json;
+  async publish(obj) {
+    let res;
+    try { res = await fetch(`${NTFY}/${this.topic}`, { method: 'POST', body: JSON.stringify(obj) }); }
+    catch { const e = new Error('Sin conexión.'); e.network = true; throw e; }
+    if (!res.ok) { const e = new Error(`No se pudo enviar (${res.status}).`); e.network = true; throw e; }
   }
-  async ensureBranch() {
-    const r = await this._req('GET', `/repos/${this.owner}/${this.repo}/git/ref/heads/${this.branch}`);
-    if (r.status === 200) return;
-    const repo = await this.check();
-    const base = await this._req('GET', `/repos/${this.owner}/${this.repo}/git/ref/heads/${repo.default_branch}`);
-    if (base.status !== 200) throw new Error('No pude leer la rama principal del repositorio. ¿Tiene algún archivo subido?');
-    const c = await this._req('POST', `/repos/${this.owner}/${this.repo}/git/refs`, { ref: `refs/heads/${this.branch}`, sha: base.json.object.sha });
-    if (c.status !== 201 && c.status !== 422) throw new Error('No pude crear la rama de datos en GitHub.');
-  }
-  async read() {
-    const r = await this._req('GET', `/repos/${this.owner}/${this.repo}/contents/${this.path}?ref=${this.branch}&_=${Date.now()}`);
-    if (r.status === 404) return null;
-    if (r.status !== 200) throw new Error('No pude leer los datos en GitHub.');
-    return { sha: r.json.sha, data: JSON.parse(b64decode(r.json.content)) };
-  }
-  async write(data, sha, message) {
-    const r = await this._req('PUT', `/repos/${this.owner}/${this.repo}/contents/${this.path}`, {
-      message, branch: this.branch, content: b64encode(JSON.stringify(data, null, 1)), ...(sha ? { sha } : {}),
-    });
-    if (r.status === 200 || r.status === 201) return r.json.content.sha;
-    if (r.status === 409 || r.status === 422) return null; // alguien guardó antes: reintentar
-    throw new Error('No pude guardar en GitHub.');
-  }
-}
-
-// ---------------------------------------------------------------- jsonblob (automático)
-const BLOB = 'https://jsonblob.com/api/jsonBlob';
-class JsonBlob {
-  constructor({ id }) { this.id = id; this.kind = 'blob'; }
-  static async _fetch(url, opts = {}) {
-    try {
-      return await fetch(url, { cache: 'no-store', ...opts, headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(opts.headers || {}) } });
-    } catch { const e = new Error('Sin conexión con el servidor compartido.'); e.network = true; throw e; }
-  }
-  static async create(data) {
-    const res = await JsonBlob._fetch(BLOB, { method: 'POST', body: JSON.stringify({ ...data, rev: 1 }) });
-    if (!res.ok) throw new Error('No se pudo crear el espacio compartido.');
-    const loc = res.headers.get('Location') || res.headers.get('X-jsonblob') || res.headers.get('x-jsonblob-id') || '';
-    const id = loc.split('/').filter(Boolean).pop();
-    if (!id) throw new Error('El servicio compartido no devolvió el identificador.');
-    return id;
-  }
-  async check() { const r = await this.read(); if (!r) throw new Error('Ese enlace ya no existe. Pide a tu pareja que te envíe uno nuevo.'); }
-  async ensureBranch() {}
-  async read() {
-    const res = await JsonBlob._fetch(`${BLOB}/${this.id}`);
-    if (res.status === 404) return null;
-    if (!res.ok) { const e = new Error('No se pudieron leer los datos compartidos.'); e.network = res.status >= 500 || res.status === 429; throw e; }
-    const data = await res.json();
-    return { sha: String(data.rev || 0), data };
-  }
-  // Escribe y comprueba que nadie escribió a la vez; si lo hizo, devuelve null para reintentar.
-  async write(data, sha) {
-    const fresh = await this.read();
-    if (fresh && String(fresh.data.rev || 0) !== String(sha || 0)) return null;
-    const nonce = uid();
-    const body = { ...data, rev: (+sha || 0) + 1, writer: nonce };
-    const res = await JsonBlob._fetch(`${BLOB}/${this.id}`, { method: 'PUT', body: JSON.stringify(body) });
-    if (!res.ok) { const e = new Error('No se pudieron guardar los datos compartidos.'); e.network = true; throw e; }
-    const check = await this.read();
-    return check && check.data.writer === nonce ? String(body.rev) : null;
-  }
-}
-const makeRemote = (cfg) => (cfg.kind === 'blob' ? new JsonBlob(cfg) : new GitHub(cfg));
-
-// Enlace de invitación (modo automático).
-export const inviteUrl = (cfg) => `${location.origin}${location.pathname}#mushu=${cfg.id}`;
-export function blobFromUrl(text) {
-  const m = String(text || '').match(/[#&?]mushu=([A-Za-z0-9-]{8,})/);
-  return m ? { kind: 'blob', id: m[1] } : null;
-}
-
-// Código para que la pareja se conecte: incluye el repositorio y el token.
-export const encodeLink = (cfg) => 'MUSHU-' + b64encode(JSON.stringify({ o: cfg.owner, r: cfg.repo, t: cfg.token })).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
-export function decodeLink(code) {
-  const blob = blobFromUrl(code);
-  if (blob) return blob;
-  const s = code.trim().replace(/^MUSHU-/i, '').replace(/-/g, '+').replace(/_/g, '/');
-  try { const j = JSON.parse(b64decode(s + '==='.slice((s.length + 3) % 4))); if (j.o && j.r && j.t) return { kind: 'github', owner: j.o, repo: j.r, token: j.t }; } catch {}
-  throw new Error('No reconozco ese enlace o código. Ábrelo directamente desde el mensaje de tu pareja.');
-}
-
-// Si la web está en usuario.github.io/repositorio/, deduce el repositorio.
-export function guessRepo() {
-  const m = location.hostname.match(/^([^.]+)\.github\.io$/i);
-  if (!m) return { owner: '', repo: '' };
-  const seg = location.pathname.split('/').filter(Boolean)[0];
-  return { owner: m[1], repo: seg || `${m[1]}.github.io` };
 }
 
 // ---------------------------------------------------------------- Store
 export class Store {
   constructor() {
     this.listeners = new Set();
-    this.data = null;
+    this.repl = null;      // { v, topic, base, ops, lastMsg, ack, sentAt, haveSent }
+    this.data = null;      // estado calculado { pet, log }
     this.meId = LS.get(ME_KEY);
-    const cfg = JSON.parse(LS.get(SYNC_KEY) || 'null');
-    this.gh = cfg ? makeRemote(cfg) : null;
-    this.sha = null;
-    this.status = this.gh ? 'syncing' : 'local';
-    this._busy = Promise.resolve();
-    this._timer = null;
+    this.device = LS.get(DEV_KEY) || (() => { const d = uid(); LS.set(DEV_KEY, d); return d; })();
+    this.status = 'local';
+    this.lastError = '';
+    this._syncing = null;
     window.addEventListener('online', () => this.sync());
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.sync(); });
   }
 
-  get synced() { return !!this.gh; }
-  get syncConfig() { return JSON.parse(LS.get(SYNC_KEY) || 'null'); }
+  get synced() { return !!this.repl?.topic; }
   get pet() { return this.data?.pet || null; }
-  get pendingCount() { return this._pending().length; }
+  get pendingCount() { return this.repl ? this.repl.ops.filter((o) => o.dev === this.device && o.at > (this.repl.sentAt || '')).length : 0; }
 
   subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   _emit(type, data) { for (const f of this.listeners) f(type, data); }
   _setStatus(s) { if (s !== this.status) { this.status = s; this._emit('status', s); } }
-  _save() { LS.set(KEY, JSON.stringify(this.data)); }
-  _pending() { try { return JSON.parse(LS.get(PENDING_KEY) || '[]'); } catch { return []; } }
-  _setPending(list) { LS.set(PENDING_KEY, JSON.stringify(list)); }
+  _save() { LS.set(KEY, JSON.stringify(this.repl)); }
+
+  // Recalcula el estado a partir de la base y todas las ops.
+  _replay() {
+    const data = structuredClone(this.repl.base);
+    migratePet(data.pet);
+    data.log = data.log || [];
+    const rejected = new Map();
+    for (const op of [...this.repl.ops].sort(opOrder)) {
+      const backup = structuredClone(data.pet);
+      try { applyOp(data, op); } catch (e) { data.pet = backup; rejected.set(op.id, e.message); }
+    }
+    this.data = data;
+    return rejected;
+  }
 
   async init() {
-    try { this.data = JSON.parse(LS.get(KEY) || 'null'); } catch { this.data = null; }
-    if (this.data) migrate(this.data);
-    if (this.gh) {
-      await this.sync(true).catch(() => {});
-      this._startPolling();
+    try { this.repl = JSON.parse(LS.get(KEY) || 'null'); } catch { this.repl = null; }
+    if (!this.repl) {
+      // migrar la versión anterior (todo lo que ya teníais se conserva)
+      let old = null;
+      try { old = JSON.parse(LS.get(OLD_KEY) || 'null'); } catch {}
+      if (old?.pet) {
+        this.repl = { v: 3, topic: randomTopic(), base: trimBase({ pet: migratePet(old.pet), log: old.log || [] }), ops: [], lastMsg: null, ack: '', sentAt: '' };
+        this._save();
+      }
     }
-    if (this.data && (!this.meId || !this.data.pet.members.some((m) => m.id === this.meId))) {
-      if (!this.synced) this.setMe(this.data.pet.members[0].id);
+    if (!this.repl) return null;
+    if (!this.repl.topic) { this.repl.topic = randomTopic(); this._save(); }
+    this._replay();
+    if (!this.meId || !this.pet.members.some((m) => m.id === this.meId)) {
+      if (!this.repl.joined) this.setMe(this.pet.members[0].id);
     }
-    if (this.data) this._checkMovedOut();
-    if (this.data && !this.gh) this.autoShare();
+    this._checkMovedOut();
+    this.sync();
+    this._startPolling();
     return this.pet;
   }
 
@@ -249,153 +209,144 @@ export class Store {
 
   _checkMovedOut() {
     const n = neglect(this.data.pet, new Date());
-    if (n.movedOut && !this.data.pet.state.movedOutAt) this._op({ type: 'movedOut', day: n.movedOutDay }).catch(() => {});
-  }
-
-  // Crea el espacio compartido automático (sin cuentas). Si falla, se reintenta más tarde.
-  async autoShare() {
-    if (this.gh || !this.data) return false;
-    try {
-      const id = await JsonBlob.create(this.data);
-      const cfg = { kind: 'blob', id };
-      LS.set(SYNC_KEY, JSON.stringify(cfg));
-      this.gh = new JsonBlob(cfg);
-      this.sha = '1';
-      this._setStatus('online');
-      this._startPolling();
-      return true;
-    } catch { this._setStatus('local'); return false; }
+    if (n.movedOut && !this.data.pet.state.movedOutAt) this._op({ type: 'movedOut', day: n.movedOutDay });
   }
 
   async createPet({ name, birthDate, myName, partnerName, streak = 0 }) {
     const now = new Date();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/La_Paz';
     const a = { id: uid(), name: myName }, b = { id: uid(), name: partnerName || 'Pareja' };
-    this.data = migrate({
-      v: 2, log: [],
-      pet: { id: uid(), name, birthDate, tz, settings: structuredClone(DEFAULT_SETTINGS), state: newPetState(now, tz, streak), members: [a, b] },
-    });
+    const pet = migratePet({ id: uid(), name, birthDate, tz, settings: structuredClone(DEFAULT_SETTINGS), state: newPetState(now, tz, streak), members: [a, b] });
+    this.repl = { v: 3, topic: randomTopic(), base: { pet, log: [] }, ops: [], lastMsg: null, ack: '', sentAt: '' };
     this.setMe(a.id);
-    this._save();
-    if (this.gh) await this._push('Mushu: nueva mascota').catch(() => {});
-    else await this.autoShare();
+    this._replay(); this._save();
+    this.sync(); this._startPolling();
+    return this.pet;
+  }
+
+  // Enlace para la pareja (contiene la base comprimida y el canal).
+  async inviteUrl() {
+    if (!this.repl) return '';
+    if (!this._packed || this._packedFor !== this.repl.base) { this._packed = await packBase(this.repl.base); this._packedFor = this.repl.base; }
+    return `${location.origin}${location.pathname}#m=${this.repl.topic}~${this._packed}`;
+  }
+
+  // Abrir el enlace de la pareja en este teléfono.
+  async joinFromLink(text) {
+    const inv = parseInvite(text);
+    if (!inv) throw new Error('No reconozco ese enlace. Ábrelo directamente desde el mensaje de tu pareja.');
+    if (this.repl?.topic === inv.topic) return this.pet;
+    let base;
+    try { base = await unpackBase(inv.packed); } catch { throw new Error('El enlace está incompleto. Pide a tu pareja que te lo envíe de nuevo.'); }
+    this.repl = { v: 3, topic: inv.topic, base, ops: [], lastMsg: null, ack: '', sentAt: '', joined: true };
+    this.meId = null; LS.del(ME_KEY);
+    this._replay(); this._save();
+    await this.sync().catch(() => {});
+    this._startPolling();
     return this.pet;
   }
 
   // ---- cambios ----
   _op(partial) {
-    const op = { id: uid(), at: new Date().toISOString(), by: this.meId, ...partial };
-    // 1) aplicar en local al instante (la interfaz no espera a la red)
-    const backup = structuredClone(this.data);
-    try { applyOp(this.data, op); }
-    catch (e) { this.data = backup; return Promise.resolve({ ok: false, reason: e.message, pet: this.pet }); }
-    this._save();
-    if (!this.gh) return Promise.resolve({ ok: true, pet: this.pet, op });
-    // 2) enviar a GitHub en orden
-    this._setPending([...this._pending(), op]);
-    const run = this._busy.then(() => this._flush()).then(() => ({ ok: true, pet: this.pet, op }), (e) => {
-      if (e.rule) return { ok: false, reason: e.message, pet: this.pet };
-      return { ok: true, pending: true, pet: this.pet, op };
-    });
-    this._busy = run.catch(() => {});
-    return run;
-  }
-
-  // Aplica las ops pendientes sobre la versión remota más reciente y la guarda.
-  async _flush() {
-    let pending = this._pending();
-    if (!pending.length) return;
-    this._setStatus('syncing');
-    for (let attempt = 0; attempt < 4; attempt++) {
-      let remote;
-      try { remote = await this.gh.read(); } catch (e) { this._setStatus('offline'); throw e; }
-      const base = remote ? migrate(remote.data) : structuredClone(this.data);
-      const rejected = [];
-      for (const op of pending) {
-        try { applyOp(base, op); } catch (e) { if (e.rule) rejected.push({ op, e }); else throw e; }
-      }
-      let sha;
-      try { sha = await this.gh.write(base, remote?.sha, `Mushu: ${pending.map((o) => o.action || o.type).join(', ')}`); }
-      catch (e) { this._setStatus('offline'); throw e; }
-      if (sha) {
-        this.sha = sha;
-        const mine = new Set(pending.map((o) => o.id));
-        this._setPending(this._pending().filter((o) => !mine.has(o.id)));
-        this._adopt(base, false);
-        this._setStatus('online');
-        if (rejected.length) throw new RuleError(rejected[0].e.message);
-        return;
-      }
-      pending = this._pending();
+    if (!this.repl) return Promise.resolve({ ok: false, reason: 'Sin mascota.' });
+    const op = { id: uid(), at: new Date().toISOString(), by: this.meId, dev: this.device, ...partial };
+    this.repl.ops.push(op);
+    const rejected = this._replay();
+    if (rejected.has(op.id)) {
+      this.repl.ops = this.repl.ops.filter((o) => o.id !== op.id);
+      this._replay();
+      return Promise.resolve({ ok: false, reason: rejected.get(op.id), pet: this.pet });
     }
-    this._setStatus('offline');
-    throw new Error('Demasiados cambios a la vez, se reintentará.');
-  }
-
-  async _push(message) {
-    await this.gh.ensureBranch();
-    const remote = await this.gh.read();
-    const sha = await this.gh.write(this.data, remote?.sha, message);
-    if (sha) { this.sha = sha; this._setStatus('online'); }
-  }
-
-  _adopt(data, notify = true) {
-    const prev = this.data;
-    const seen = new Set((prev?.log || []).map((l) => l.id));
-    this.data = migrate(data);
-    // reaplicar en local lo que aún no se ha enviado
-    for (const op of this._pending()) { try { applyOp(this.data, op); } catch {} }
+    this._compact();
     this._save();
-    if (notify) {
-      for (const l of [...this.data.log].reverse()) if (!seen.has(l.id) && l.memberId !== this.meId && prev) this._emit('remote', l);
+    this.sync();
+    return Promise.resolve({ ok: true, pet: this.pet, op, pending: this.status === 'offline' });
+  }
+
+  // Muchos años de cambios: los de más de 120 días pasan a la base.
+  _compact() {
+    if (this.repl.ops.length < 4000) return;
+    const cut = new Date(Date.now() - 120 * 86400000).toISOString();
+    const old = this.repl.ops.filter((o) => o.at < cut);
+    const keep = this.repl.ops.filter((o) => o.at >= cut);
+    const saved = this.repl.ops;
+    this.repl.ops = old; this._replay();
+    this.repl.base = { pet: this.data.pet, log: this.data.log.slice(0, 200) };
+    this.repl.ops = keep; this._replay();
+    void saved;
+  }
+
+  // ---- sincronización ----
+  sync() {
+    if (!this.repl?.topic) return Promise.resolve();
+    if (this._syncing) return this._syncing;
+    this._syncing = this._doSync().finally(() => { this._syncing = null; });
+    return this._syncing;
+  }
+
+  async _doSync() {
+    const relay = new Relay(this.repl.topic);
+    const r = this.repl;
+    // 1) recibir
+    let msgs;
+    try { msgs = await relay.poll(r.lastMsg); }
+    catch (e) { this.lastError = e.message; this._setStatus('offline'); return; }
+    const known = new Set(r.ops.map((o) => o.id));
+    const fresh = [];
+    for (const m of msgs) {
+      r.lastMsg = m.id;
+      let p; try { p = JSON.parse(m.message); } catch { continue; }
+      if (!p || p.d === this.device) continue;
+      if (p.k === 'ops' && Array.isArray(p.ops)) {
+        for (const op of p.ops) if (op && op.id && op.at && !known.has(op.id)) { known.add(op.id); r.ops.push(op); fresh.push(op); }
+      }
+      if (p.k === 'have' && p.up && p.up[this.device] && p.up[this.device] > (r.ack || '')) r.ack = p.up[this.device];
+    }
+    if (fresh.length) {
+      const before = new Set(this.data.log.map((l) => l.id));
+      this._replay();
+      this._compact();
+      this._save();
+      const recent = Date.now() - 6 * 3600000;
+      for (const l of [...this.data.log].reverse()) {
+        if (!before.has(l.id) && l.memberId !== this.meId && new Date(l.at).getTime() > recent) this._emit('remote', l);
+      }
       this._emit('pet', this.pet);
-    }
-  }
+    } else this._save();
 
-  // Trae la versión remota (y envía lo pendiente).
-  async sync(first = false) {
-    if (!this.gh) return;
-    if (this._pending().length) { await this._busy; this._busy = this._flush().catch(() => {}); await this._busy; return; }
+    // 2) enviar mis cambios que la pareja todavía no confirmó
     try {
-      const remote = await this.gh.read();
+      const mine = r.ops.filter((o) => o.dev === this.device && o.at > (r.ack || '')).sort(opOrder);
+      const newest = mine.length ? mine[mine.length - 1].at : '';
+      const due = mine.length && (newest > (r.sentAt || '') || Date.now() - (r.sentWall || 0) > RESEND_MS);
+      if (due) {
+        let chunk = [];
+        const flush = async () => { if (chunk.length) { await relay.publish({ k: 'ops', d: this.device, ops: chunk }); chunk = []; } };
+        for (const op of mine) {
+          chunk.push(op);
+          if (bytes(JSON.stringify({ k: 'ops', d: this.device, ops: chunk })) > MAX_MSG) { chunk.pop(); await flush(); chunk.push(op); }
+        }
+        await flush();
+        r.sentAt = newest; r.sentWall = Date.now();
+      }
+      // confirmar lo que yo tengo de la pareja
+      const up = {};
+      for (const o of r.ops) if (o.dev && o.dev !== this.device && (!up[o.dev] || o.at > up[o.dev])) up[o.dev] = o.at;
+      const sig = JSON.stringify(up);
+      if (Object.keys(up).length && (sig !== r.haveSig || Date.now() - (r.haveWall || 0) > 10 * 60000)) {
+        await relay.publish({ k: 'have', d: this.device, up });
+        r.haveSig = sig; r.haveWall = Date.now();
+      }
+      this._save();
+      this.lastError = '';
       this._setStatus('online');
-      if (!remote) { if (this.data) await this._push('Mushu: primera copia'); return; }
-      if (remote.sha !== this.sha) { this.sha = remote.sha; this._adopt(remote.data, !first); }
-    } catch (e) { this._setStatus('offline'); if (!e.network) throw e; }
+    } catch (e) { this.lastError = e.message; this._setStatus('offline'); }
   }
 
   _startPolling() {
     clearInterval(this._timer);
-    this._timer = setInterval(() => { if (!document.hidden) this.sync().catch(() => {}); }, POLL_MS);
+    this._timer = setInterval(() => { if (!document.hidden) this.sync(); }, POLL_MS);
   }
-
-  // Conectar este dispositivo a GitHub. Devuelve 'pushed' (subió esta mascota) o 'adopted' (usó la que había).
-  async connect(cfg, { prefer = 'remote' } = {}) {
-    const gh = makeRemote(cfg);
-    await gh.check();
-    await gh.ensureBranch();
-    const remote = await gh.read();
-    LS.set(SYNC_KEY, JSON.stringify(cfg.kind === 'blob' ? { kind: 'blob', id: cfg.id } : { kind: 'github', owner: cfg.owner, repo: cfg.repo, token: cfg.token }));
-    this.gh = gh;
-    let result;
-    if (remote && (prefer === 'remote' || !this.data)) {
-      this.sha = remote.sha; this._adopt(remote.data, false); result = 'adopted';
-    } else if (this.data) {
-      const sha = await gh.write(this.data, remote?.sha, 'Mushu: conectar'); this.sha = sha; result = 'pushed';
-    } else result = 'empty';
-    this._setStatus('online');
-    this._startPolling();
-    return result;
-  }
-
-  async peekRemote(cfg) {
-    const gh = makeRemote(cfg);
-    await gh.check();
-    const r = await gh.read().catch(() => null);
-    return r?.data?.pet || null;
-  }
-
-  disconnect() { LS.del(SYNC_KEY); this.gh = null; clearInterval(this._timer); this._setStatus('local'); }
 
   // ---- API usada por la interfaz ----
   act(action, item = null) { return this._op({ type: 'act', action, item }); }
@@ -410,14 +361,15 @@ export class Store {
   logGame(score) { return this._op({ type: 'game', score }); }
   markJoined() { const m = this.pet?.members.find((x) => x.id === this.meId); return m && !m.joinedAt ? this._op({ type: 'joined' }) : Promise.resolve({ ok: true }); }
   history() { return this.data?.log || []; }
-  exportData() { return JSON.stringify(this.data, null, 2); }
+  exportData() { return JSON.stringify(this.repl, null, 1); }
   async importData(json) {
     const d = JSON.parse(json);
-    if (!d?.pet?.state || !d.pet.birthDate) throw new Error('El archivo no es una copia válida.');
-    this.data = migrate(d);
-    if (!this.data.pet.members.some((m) => m.id === this.meId)) this.setMe(this.data.pet.members[0].id);
-    this._save();
-    if (this.gh) await this._push('Mushu: restaurar copia');
+    if (d?.v === 3 && d.base?.pet) this.repl = { ...d, lastMsg: null, sentAt: '', ack: '' };
+    else if (d?.pet?.state) this.repl = { v: 3, topic: this.repl?.topic || randomTopic(), base: trimBase({ pet: migratePet(d.pet), log: d.log || [] }), ops: [], lastMsg: null, ack: '', sentAt: '' };
+    else throw new Error('El archivo no es una copia válida.');
+    this._replay();
+    if (!this.pet.members.some((m) => m.id === this.meId)) this.setMe(this.pet.members[0].id);
+    this._save(); this.sync();
     return this.pet;
   }
 }

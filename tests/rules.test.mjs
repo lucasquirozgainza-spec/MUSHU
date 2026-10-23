@@ -103,3 +103,12 @@ test('las estadísticas bajan con el tiempo pero nunca a cero', () => {
   assert.equal(derive(pet, at('2026-11-20T10:00:00-04:00'), 'a').stats.hunger, 5);
   assert.equal(localDay(at('2026-10-23T23:30:00-04:00'), TZ), '2026-10-23');
 });
+
+test('cada cuidador tiene su propio tiempo de espera', () => {
+  const d0 = at('2026-10-23T10:00:00-04:00');
+  let pet = makePet(d0);
+  pet = applyAction(pet, { action: 'feed', item: 'manzana', memberId: 'a' }, d0).pet;
+  const d1 = at('2026-10-23T10:01:00-04:00');
+  assert.equal(canDo(pet, 'feed', 'galleta', d1, 'a').ok, false, 'Ana espera');
+  assert.equal(canDo(pet, 'feed', 'galleta', d1, 'b').ok, true, 'Leo puede darle de comer');
+});

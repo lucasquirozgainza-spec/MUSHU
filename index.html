@@ -12,7 +12,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@600;700;800&display=swap">
-<link rel="stylesheet" href="styles/app.css">
+<link rel="stylesheet" href="styles/app.css?v=5">
 </head>
 <body>
 <div class="sky" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -47,7 +47,7 @@
   <form class="card form" id="f-join" hidden>
     <p class="small">Lo más fácil: abre directamente el enlace que te envió tu pareja. Si no funciona, pégalo aquí.</p>
     <label for="in-code">Enlace de tu pareja</label>
-    <input id="in-code" required placeholder="https://…#mushu=…" autocomplete="off" spellcheck="false">
+    <input id="in-code" required placeholder="https://…#m=…" autocomplete="off" spellcheck="false">
     <p class="err" id="join-err" role="alert"></p>
     <button class="btn primary" type="submit">Conectar</button>
   </form>
@@ -133,26 +133,12 @@
     <div class="card form" id="share-card">
       <h2>Compartir con tu pareja</h2>
       <p class="small" id="share-state"></p>
-      <div id="share-link-box" hidden>
+      <p class="small version">Versión 5 · conexión automática</p>
+      <div id="share-link-box">
         <label for="invite-link">Enlace para tu pareja</label>
         <div class="row"><input id="invite-link" readonly><button class="btn" type="button" id="btn-copy">Copiar</button></div>
         <div class="row"><button class="btn primary" type="button" id="btn-send">Enviar enlace</button><button class="btn" type="button" id="btn-who">Cambiar quién soy</button></div>
       </div>
-      <button class="btn" type="button" id="btn-retry" hidden>Reintentar conexión</button>
-      <details class="planb">
-        <summary>Otra forma: guardar en GitHub</summary>
-        <form class="form" id="f-share">
-          <p class="small">Solo si el modo automático no funciona. Los pasos están en el README.</p>
-          <label for="sh-owner">Usuario de GitHub</label>
-          <input id="sh-owner" autocomplete="off" spellcheck="false" placeholder="tu-usuario">
-          <label for="sh-repo">Repositorio</label>
-          <input id="sh-repo" autocomplete="off" spellcheck="false" value="mushu">
-          <label for="sh-token">Token de GitHub</label>
-          <input id="sh-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
-          <p class="err" id="share-err" role="alert"></p>
-          <button class="btn" type="submit" id="btn-share">Conectar con GitHub</button>
-        </form>
-      </details>
     </div>
     <form class="card form" id="f-petname">
       <h2>Mascota</h2>
@@ -197,6 +183,6 @@
 </main>
 
 <div class="banner" id="banner" aria-live="polite"><div><h2></h2><p></p></div></div>
-<script type="module" src="src/app/main.js"></script>
+<script type="module" src="src/app/main.js?v=5"></script>
 </body>
 </html>

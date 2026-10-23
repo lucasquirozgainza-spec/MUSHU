@@ -13,7 +13,7 @@ Una mascota que criáis entre los dos desde vuestros teléfonos o computadoras. 
 - **Jugar:** abre un minijuego en el que Mushu atrapa balones, corazones y estrellas y tiene que esquivar las nubes.
 - **Dormir:** se acuesta en su cama con manta y **descansa 2 horas reales**. Durante ese tiempo no se le puede despertar, y tu pareja también lo ve dormido.
 - **Vida propia:** a veces lo pillas haciendo dominadas con el balón, leyendo, con el móvil o con su autito; al verte llegar se sorprende, suelta lo que tenía y te saluda. El balón se puede patear.
-- **Armario:** coronita, cetro, gorro y máscara de superhéroe, gorros, gafas, chaquetas, bufandas, capas, zapatos y disfraces completos. Algunas prendas se desbloquean con los días de cuidados.
+- **Armario:** coronita, cetro, gorra roja y azul, gorro y máscara de superhéroe, gorros, gafas, chaquetas, bufandas, capas, zapatos y disfraces completos. Algunas prendas se desbloquean con los días de cuidados.
 - **Icono:** si la añadís a la pantalla de inicio del teléfono, el icono es Mushu.
 
 ---
@@ -32,16 +32,18 @@ Al abrirlo aparece directamente **«¿Cómo se llamará nuestra mascota?»**. Es
 
 No hay que configurar nada:
 
-1. Al crear a Mushu, la app guarda una copia compartida automáticamente y en la pantalla principal aparece **«Invita a …»**.
-2. Pulsa **Enviar enlace** y mándalo por WhatsApp a tu pareja (también está en **Ajustes → Compartir con tu pareja**).
-3. Tu pareja abre el enlace, toca su nombre y listo: los dos veis a la misma mascota. Lo que hace uno le aparece al otro con aviso y animación; la app mira si hay cambios cada 15 segundos y al volver a abrirla. Sin Internet, los cuidados se guardan y se envían al volver la conexión.
+1. En la pantalla principal aparece **«Invita a …»**. Pulsa **Enviar enlace** y mándalo por WhatsApp (también está en **Ajustes → Compartir con tu pareja**).
+2. Tu pareja abre el enlace, toca su nombre y listo: los dos veis a la misma mascota.
+3. Lo que hace uno le aparece al otro con aviso y animación. La app busca cambios cada 15 segundos y al volver a abrirla. Sin Internet, los cuidados se guardan y se envían solos al volver la conexión.
 
-Si ya tenías a Mushu creado en tu teléfono con la versión anterior, no hace falta empezar de nuevo: al abrir esta versión se conecta solo y aparece la invitación.
+Si ya teníais a Mushu en el teléfono con una versión anterior, no hace falta empezar de nuevo: se conserva todo.
 
-**Cómo funciona por dentro:** la copia compartida se guarda en [jsonblob.com](https://jsonblob.com), un servicio gratuito que no pide cuentas. El enlace contiene la dirección de esa copia, así que compártelo solo con tu pareja. Cada teléfono guarda además todos los datos, y en **Ajustes → Copia de seguridad** podéis descargar un archivo cuando queráis.
-
-**Plan B (solo si el modo automático fallara):** en **Ajustes → Compartir con tu pareja → Otra forma: guardar en GitHub** se puede usar vuestro repositorio con un token:
-GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → *Only select repositories*: `mushu` → *Contents: Read and write*.
+**Cómo funciona por dentro:**
+- El enlace lleva dentro la mascota (comprimida), así que tu pareja la recibe completa al abrirlo aunque tú no estés conectado.
+- Los cambios viajan por [ntfy.sh](https://ntfy.sh), un servicio abierto y gratuito que no pide cuentas, por un canal privado con un nombre aleatorio que solo aparece en vuestro enlace. Compártelo solo con tu pareja.
+- ntfy guarda los mensajes solo unas horas, así que cada teléfono guarda todo el historial y reenvía sus cambios hasta que el otro confirma que los recibió.
+- Los dos teléfonos calculan el estado reaplicando los mismos cambios con las mismas reglas, así que siempre terminan viendo lo mismo.
+- En **Ajustes → Copia de seguridad** podéis descargar un archivo con todo cuando queráis.
 
 ## 3. Reglas y ajustes
 
@@ -53,7 +55,7 @@ GitHub → Settings → Developer settings → Personal access tokens → Fine-g
 | Vidas | 3 por mes. Se recargan el día 1 |
 | Mudanza | 3 días sin cuidados en el mismo mes. Se puede «volver a empezar» |
 | Dormir | 2 horas en la cama, hasta 3 veces al día |
-| Límites | Cada acción tiene un tiempo de espera y un máximo diario. El premio raro (fruta estelar), una vez al día |
+| Límites | Cada acción tiene un tiempo de espera (de cada cuidador) y un máximo diario. El premio raro (fruta estelar), una vez al día |
 | Logros | 7, 30, 100, 180 y 350 días en que los dos lo cuidasteis |
 
 En **Ajustes → Tiempo, racha y evolución → Editar** se pueden corregir la fecha de nacimiento, la racha y los días de cada etapa. Está protegido tras un botón para no cambiarlo por accidente. En **Ajustes → Copia de seguridad** se descarga o se restaura un archivo con todos los datos.
@@ -70,7 +72,7 @@ npm test                      # pruebas de las reglas
 | `index.html`, `styles/app.css`, `manifest.webmanifest`, `icons/` | Interfaz e iconos |
 | `src/app/main.js` | Pantallas, cuidados, armario y evolución |
 | `src/app/rules.js` | Reglas: edad, etapas, racha, vidas, mudanza, sueño, límites |
-| `src/app/store.js` | Guardado en el teléfono y sincronización automática (jsonblob) o con GitHub |
+| `src/app/store.js` | Guardado en el teléfono y sincronización automática con la pareja |
 | `src/app/minigame.js` | Minijuego de jugar |
 | `src/app/box.js` | Caja de mudanza |
 | `src/pet/` | El personaje: dibujo, animaciones, actividades, ropa, cama, balón y partículas |
